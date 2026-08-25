@@ -4,14 +4,15 @@
 # Requires Docker Compose >= 2.20 for `include:` (part of any current Docker
 # Engine install; check with `docker compose version`).
 #
-# env_file is explicit here rather than relying on each included file's own
-# directory being auto-scanned for a .env - that auto-discovery is version-
-# dependent, and running from the repo root (not each subdirectory) is
-# exactly the case where it can silently miss both files.
+# Variables (TZ, DBPASS, MAILCOW_HOSTNAME, DJANGO_SECRET_KEY, ...) come from
+# a root .env file that `./setup.sh` generates by merging mailcow.conf and
+# panel/.env - that's a plain .env next to this file, the one form of env
+# loading every Compose version has supported since v1. Relying on each
+# include:'d file auto-discovering a .env in its own subdirectory turned out
+# to be version-dependent and unreliable running from this root directory,
+# so this repo doesn't depend on that.
 name: novella-mail
 
 include:
   - path: mailcow-dockerized/docker-compose.yml
-    env_file: mailcow-dockerized/mailcow.conf
   - path: panel/docker-compose.yml
-    env_file: panel/.env

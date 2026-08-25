@@ -104,6 +104,9 @@ else
   echo "    panel/.env already exists, leaving it alone."
 fi
 
+echo "==> Generating root .env (what docker compose actually reads when run from here)"
+"${ROOT_DIR}/sync-env.sh"
+
 cat <<EOF
 
 ==> Done.
@@ -129,7 +132,7 @@ Then, to unlock self-service domain adding in the panel ("Domains" section):
      change the password) and create your first domain + mailbox.
   2. Log into the Novella panel with that mailbox's email + password.
   3. Add that same email to ADMIN_EMAILS in panel/.env, then:
-     docker compose up -d
+     ./sync-env.sh && docker compose up -d
   From then on, any further domain just needs its MX pointed at
   ${MAILCOW_HOSTNAME:-your mail server} and adding via the panel's Domains page - no
   more manual mailcow-admin-UI steps.

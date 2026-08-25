@@ -53,9 +53,14 @@ keeping everything localhost-only.
 ## Layout
 
 - `docker-compose.yml` — the single entry point; `include:`s the two below
-  into one project.
+  into one project. Reads variables from a generated root `.env` (see
+  `sync-env.sh`), not from `mailcow.conf`/`panel/.env` directly.
 - `setup.sh` — checks out the mailcow-dockerized submodule if needed,
-  configures the port split above, and generates `panel/.env`.
+  configures the port split above, generates `panel/.env`, and runs
+  `sync-env.sh`.
+- `sync-env.sh` — regenerates the root `.env` from `mailcow-dockerized/
+  mailcow.conf` + `panel/.env`. Run it any time you hand-edit either of
+  those two files - `docker compose` only ever reads the merged result.
 - `mailcow-dockerized/` — the mail engine, vendored as a git submodule
   (pinned to a release tag; `.gitmodules` has the upstream URL). Updates via
   the normal `git pull` / `./update.sh` inside it, then commit the new

@@ -102,6 +102,18 @@ This:
    `DJANGO_SECRET_KEY`, pointing `MAIL_IMAP_HOST`/`MAIL_SMTP_HOST` at your
    `MAILCOW_HOSTNAME`, and wiring up `MAILCOW_API_KEY`/`MAILCOW_API_BASE_URL`
    so the panel can reach mailcow's API.
+4. Generates a root `.env` (merging `mailcow-dockerized/mailcow.conf` and
+   `panel/.env`) - the one thing every version of `docker compose` reliably
+   auto-loads from the directory you actually run it in. `COMPOSE_PROJECT_NAME`
+   is stripped out of the merge: mailcow.conf sets that for its own
+   standalone use, and if it leaked through it would silently rename this
+   whole project away from `novella-mail`.
+
+**Important**: `docker compose` only ever reads that generated root `.env`,
+never `mailcow-dockerized/mailcow.conf` or `panel/.env` directly. Any time
+you hand-edit either of those two files later, run `./sync-env.sh`
+afterwards (every instruction below that touches one of those files says
+so) — `docker compose up -d` alone won't pick up the change otherwise.
 
 Then bring everything up with one command from the **repo root**:
 
@@ -137,8 +149,19 @@ sed -i \
   -e "s/^IPV4_NETWORK=.*/IPV4_NETWORK=x.x.x/" \
   -e "s/^API_ALLOW_FROM=.*/API_ALLOW_FROM=127.0.0.1,x.x.x.0\/24/" \
   mailcow-dockerized/mailcow.conf
+./sync-env.sh
 docker compose up -d
 ```
+If it *still* collides even after picking an address space nothing else on
+the host uses, and you've already ruled out a stale bridge/route with
+`ip link show br-mailcow` and `ip route`, Docker's own IPAM allocator can
+occasionally hang onto a subnet reservation after a network is removed,
+especially after several rapid create/destroy cycles while troubleshooting.
+`docker network prune -f` clears genuinely unused networks; short of that,
+picking yet another fresh, never-before-used subnet is the reliable
+workaround (a full Docker daemon restart also clears it, but don't do that
+on a host running other people's containers without warning them first —
+it interrupts everything, not just this stack).
 
 ## 4. Firewall
 
@@ -196,8 +219,8 @@ panel.
 **Unlock the Domains section** for that account:
 1. Edit `panel/.env`, set `ADMIN_EMAILS=` to that mailbox's email (comma
    separate more if needed).
-2. From the repo root: `docker compose up -d` (only the `panel` service
-   restarts; mailcow is untouched).
+2. From the repo root: `./sync-env.sh && docker compose up -d` (only the
+   `panel` service restarts; mailcow is untouched).
 3. Log out and back into the panel — a "Domains" link now shows in the
    top bar.
 
@@ -221,15 +244,17 @@ ACME_ACCOUNT_EMAIL=you@example.com
 ```
 plus the provider-specific API credentials as env vars (see the comments in
 `mailcow.conf` and https://docs.mailcow.email for your DNS provider). Then,
-from the repo root, `docker compose up -d` to restart the ACME container.
-Once it's issued a real cert, set `MAIL_TLS_INSECURE=false` in `panel/.env`
-and `docker compose up -d` again to pick it up.
+from the repo root, `./sync-env.sh && docker compose up -d` to restart the
+ACME container. Once it's issued a real cert, set `MAIL_TLS_INSECURE=false`
+in `panel/.env` and `./sync-env.sh && docker compose up -d` again to pick
+it up.
 
 **Option B — temporarily expose 80/443.** Open those ports publicly, set
-`HTTP_BIND=`, `HTTPS_BIND=`, `SKIP_LETS_ENCRYPT=n`, bring the stack up so
-acme-mailcow can issue/renew, then close the ports again. Works, but you'll
-need to repeat it every ~60 days for renewal, so Option A is the better fit
-for a permanently-locked-down setup.
+`HTTP_BIND=`, `HTTPS_BIND=`, `SKIP_LETS_ENCRYPT=n` in `mailcow-dockerized/
+mailcow.conf`, run `./sync-env.sh && docker compose up -d` so acme-mailcow
+can issue/renew, then close the ports again. Works, but you'll need to
+repeat it every ~60 days for renewal, so Option A is the better fit for a
+permanently-locked-down setup.
 
 ## 8. Updating
 
@@ -241,12 +266,15 @@ git pull
 ./update.sh
 ```
 Never hand-edit files under `mailcow-dockerized/data/` — `update.sh`
-overwrites them. Afterwards, from the repo root, commit the submodule's new
-pinned commit so it's recorded in this repo's history:
+overwrites them. Afterwards, from the repo root:
 ```
+./sync-env.sh
 git add mailcow-dockerized
 git commit -m "Update mailcow-dockerized"
+docker compose up -d
 ```
+(`sync-env.sh` in case a newer mailcow release added variables to
+`mailcow.conf`'s template that your existing file picked up.)
 
 Panel:
 ```
