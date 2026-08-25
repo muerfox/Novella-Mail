@@ -1,0 +1,44 @@
+<div class="detail-header">
+  <a class="back-link" href="{% url 'webmail:mail' %}?folder={{ current_folder|urlencode }}&page={{ page }}">‹ Back</a>
+  <h2>{{ detail.subject }}</h2>
+  <p class="detail-meta"><strong>From:</strong> {{ detail.from }}</p>
+  <p class="detail-meta"><strong>To:</strong> {{ detail.to }}</p>
+  {% if detail.cc %}<p class="detail-meta"><strong>Cc:</strong> {{ detail.cc }}</p>{% endif %}
+  <p class="detail-meta"><strong>Date:</strong> {{ detail.date }}</p>
+  <div class="detail-toolbar">
+    <a class="btn" href="{% url 'webmail:compose' %}?reply={{ detail.uid }}&folder={{ current_folder|urlencode }}&mode=reply">Reply</a>
+    <a class="btn" href="{% url 'webmail:compose' %}?reply={{ detail.uid }}&folder={{ current_folder|urlencode }}&mode=reply-all">Reply all</a>
+    <a class="btn" href="{% url 'webmail:compose' %}?reply={{ detail.uid }}&folder={{ current_folder|urlencode }}&mode=forward">Forward</a>
+    <form method="post" action="{% url 'webmail:message_action' %}">
+      {% csrf_token %}
+      <input type="hidden" name="folder" value="{{ current_folder }}">
+      <input type="hidden" name="uid" value="{{ detail.uid }}">
+      <input type="hidden" name="page" value="{{ page }}">
+      <button name="action" value="delete" class="btn btn-danger">Delete</button>
+    </form>
+  </div>
+</div>
+
+{% if detail.attachments %}
+<div class="attachments">
+  <strong>Attachments</strong>
+  <ul>
+    {% for a in detail.attachments %}
+      <li>
+        <a href="{% url 'webmail:attachment' %}?folder={{ current_folder|urlencode }}&uid={{ detail.uid }}&index={{ a.index }}">{{ a.filename }}</a>
+        <span class="muted">({{ a.size|filesizeformat }})</span>
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="detail-body">
+  {% if detail.html_body %}
+    <iframe class="mail-frame" sandbox="allow-same-origin" srcdoc="{{ detail.html_body }}"></iframe>
+  {% elif detail.text_body %}
+    <pre class="text-body">{{ detail.text_body }}</pre>
+  {% else %}
+    <p class="muted">(empty message)</p>
+  {% endif %}
+</div>

@@ -1,0 +1,114 @@
+{% extends "webmail/base.html" %}
+{% block title %}{{ domain }} — Novella Mail{% endblock %}
+{% block body %}
+<div class="app-shell compose-shell">
+  <header class="topbar">
+    <a href="{% url 'webmail:admin_domains' %}" class="back-link">‹ Domains</a>
+    <div class="brand">{{ domain }}</div>
+    <div class="topbar-user">
+      <span class="user-email">{{ mail_email }}</span>
+      <a href="{% url 'webmail:logout' %}">Sign out</a>
+    </div>
+  </header>
+
+  {% if messages %}
+    <div class="flash">
+      {% for message in messages %}<p class="alert alert-{{ message.tags }}">{{ message }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  <main class="compose-main">
+    <section class="admin-card">
+      <h2>DNS checklist</h2>
+      <p class="muted">Add these at your DNS provider for <strong>{{ domain }}</strong> so mail actually routes here.</p>
+      <div class="table-scroll">
+        <table class="admin-table dns-table">
+          <thead><tr><th>Type</th><th>Name</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>A</td><td>{{ mailcow_hostname }}</td><td>your server's public IP</td></tr>
+            <tr><td>MX</td><td>{{ domain }}</td><td>{{ mailcow_hostname }} (priority 10)</td></tr>
+            <tr><td>TXT</td><td>{{ domain }}</td><td class="dns-value">v=spf1 mx -all</td></tr>
+            <tr><td>TXT</td><td>_dmarc.{{ domain }}</td><td class="dns-value">v=DMARC1; p=quarantine; rua=mailto:postmaster@{{ domain }}</td></tr>
+            {% if dkim %}
+              <tr>
+                <td>TXT</td>
+                <td>{{ dkim.dkim_selector }}._domainkey.{{ domain }}</td>
+                <td class="dns-value">{{ dkim.dkim_txt }}</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+      <p class="muted">PTR (reverse DNS) is set with your hosting provider, not in this zone — point it at {{ mailcow_hostname }}.</p>
+    </section>
+
+    <section class="admin-card">
+      <h2>DKIM</h2>
+      {% if dkim %}
+        <p>Selector <code>{{ dkim.dkim_selector }}</code>, {{ dkim.length }}-bit key. Published in the checklist above.</p>
+      {% else %}
+        <p class="muted">No DKIM key yet — outgoing mail for this domain won't be signed until you generate one.</p>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="form_name" value="dkim">
+          <button type="submit" class="btn btn-primary">Generate DKIM key</button>
+        </form>
+      {% endif %}
+    </section>
+
+    <section class="admin-card">
+      <h2>Add a mailbox</h2>
+      <form method="post" class="compose-form">
+        {% csrf_token %}
+        <input type="hidden" name="form_name" value="mailbox">
+        <label for="{{ mailbox_form.local_part.id_for_label }}">Mailbox</label>
+        <div class="mailbox-input-row">
+          {{ mailbox_form.local_part }}<span class="muted">@{{ domain }}</span>
+        </div>
+        {% for err in mailbox_form.local_part.errors %}<p class="field-error">{{ err }}</p>{% endfor %}
+
+        <label for="{{ mailbox_form.name.id_for_label }}">Display name</label>
+        {{ mailbox_form.name }}
+
+        <label for="{{ mailbox_form.password.id_for_label }}">Password</label>
+        {{ mailbox_form.password }}
+        {% for err in mailbox_form.password.errors %}<p class="field-error">{{ err }}</p>{% endfor %}
+
+        <label for="{{ mailbox_form.password2.id_for_label }}">Confirm password</label>
+        {{ mailbox_form.password2 }}
+        {% for err in mailbox_form.password2.errors %}<p class="field-error">{{ err }}</p>{% endfor %}
+
+        <button type="submit" class="btn btn-primary">Create mailbox</button>
+      </form>
+    </section>
+
+    <section class="admin-card">
+      <h2>Mailboxes</h2>
+      <div class="table-scroll">
+        <table class="admin-table">
+          <thead><tr><th>Address</th><th>Name</th><th>Quota used</th><th></th></tr></thead>
+          <tbody>
+            {% for m in mailboxes %}
+              <tr>
+                <td>{{ m.username }}</td>
+                <td>{{ m.name }}</td>
+                <td>{{ m.quota_used|filesizeformat }} / {{ m.quota|filesizeformat }}</td>
+                <td>
+                  <form method="post" action="{% url 'webmail:admin_mailbox_action' %}" hx-confirm="Delete {{ m.username }}?">
+                    {% csrf_token %}
+                    <input type="hidden" name="domain" value="{{ domain }}">
+                    <input type="hidden" name="username" value="{{ m.username }}">
+                    <button name="action" value="delete" class="icon-btn danger">Delete</button>
+                  </form>
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="4" class="muted">No mailboxes yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+{% endblock %}

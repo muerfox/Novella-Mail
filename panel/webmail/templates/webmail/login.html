@@ -1,0 +1,17 @@
+{% extends "webmail/base.html" %}
+{% block title %}Sign in — Novella Mail{% endblock %}
+{% block body %}
+<main class="auth-page">
+  <form class="auth-card" method="post">
+    {% csrf_token %}
+    <h1>Novella Mail</h1>
+    {% if error %}<p class="alert alert-error">{{ error }}</p>{% endif %}
+    {% for field in form %}
+      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {{ field }}
+      {% for err in field.errors %}<p class="field-error">{{ err }}</p>{% endfor %}
+    {% endfor %}
+    <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+  </form>
+</main>
+{% endblock %}

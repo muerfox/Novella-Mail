@@ -1,0 +1,25 @@
+services:
+  panel:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - panel_data:/app/data
+    ports:
+      - "127.0.0.1:${PANEL_PORT:-3007}:8000"
+    networks:
+      - default
+      - mailcow
+
+volumes:
+  panel_data:
+
+networks:
+  default:
+  # Joins mailcow-dockerized's own network so the panel can call its admin
+  # API at http://nginx:<port> directly, without exposing that API publicly.
+  # Must already exist - i.e. mailcow-dockerized has to be up first.
+  mailcow:
+    name: ${MAILCOW_NETWORK_NAME:-mailcowdockerized_mailcow-network}
+    external: true

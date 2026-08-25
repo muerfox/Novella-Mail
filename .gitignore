@@ -1,0 +1,16 @@
+# mailcow-dockerized is fetched by setup.sh, not vendored in this repo.
+# It manages its own updates via `./update.sh` (git pull), so we don't commit it here.
+/mailcow-dockerized/
+
+# Never commit secrets
+*.env
+mailcow.conf
+mailcow.conf_backup
+.env
+
+# Django panel runtime artifacts
+panel/staticfiles/
+panel/data/
+__pycache__/
+*.pyc
+db.sqlite3

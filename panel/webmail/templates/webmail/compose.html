@@ -1,0 +1,45 @@
+{% extends "webmail/base.html" %}
+{% block title %}Compose — Novella Mail{% endblock %}
+{% block body %}
+<div class="app-shell compose-shell">
+  <header class="topbar">
+    <a href="{% url 'webmail:mail' %}" class="back-link">‹ Back to mail</a>
+    <div class="brand">New message</div>
+  </header>
+
+  {% if messages %}
+    <div class="flash">
+      {% for message in messages %}<p class="alert alert-{{ message.tags }}">{{ message }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  <main class="compose-main">
+    <form method="post" enctype="multipart/form-data" class="compose-form">
+      {% csrf_token %}
+      {{ form.in_reply_to }}
+      {{ form.references }}
+
+      <label for="{{ form.to.id_for_label }}">To</label>
+      {{ form.to }}
+      {% for err in form.to.errors %}<p class="field-error">{{ err }}</p>{% endfor %}
+
+      <label for="{{ form.cc.id_for_label }}">Cc</label>
+      {{ form.cc }}
+
+      <label for="{{ form.subject.id_for_label }}">Subject</label>
+      {{ form.subject }}
+
+      <label for="{{ form.body.id_for_label }}">Message</label>
+      {{ form.body }}
+
+      <label for="attachments">Attachments</label>
+      <input type="file" name="attachments" id="attachments" multiple>
+
+      <div class="compose-actions">
+        <button type="submit" class="btn btn-primary">Send</button>
+        <a href="{% url 'webmail:mail' %}" class="btn">Cancel</a>
+      </div>
+    </form>
+  </main>
+</div>
+{% endblock %}

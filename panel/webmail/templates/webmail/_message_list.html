@@ -1,0 +1,45 @@
+<div class="list-toolbar">
+  <h2>{{ current_folder }}</h2>
+  <span class="muted">{{ total }} message{{ total|pluralize }}</span>
+</div>
+<ul class="message-list">
+  {% for m in messages_list %}
+    <li class="msg-row {% if not m.seen %}unread{% endif %} {% if m.uid == selected_uid %}selected{% endif %}">
+      <a class="msg-link" href="{% url 'webmail:mail' %}?folder={{ current_folder|urlencode }}&uid={{ m.uid }}&page={{ page }}">
+        <span class="msg-from">{{ m.from|default:"(unknown sender)" }}</span>
+        <span class="msg-subject">{{ m.subject }}</span>
+        <span class="msg-date">{% if m.date %}{{ m.date|date:"M j, Y H:i" }}{% endif %}</span>
+      </a>
+      <form method="post" action="{% url 'webmail:message_action' %}" class="msg-actions">
+        {% csrf_token %}
+        <input type="hidden" name="folder" value="{{ current_folder }}">
+        <input type="hidden" name="uid" value="{{ m.uid }}">
+        <input type="hidden" name="page" value="{{ page }}">
+        {% if m.seen %}
+          <button name="action" value="mark_unread" class="icon-btn" title="Mark unread">●</button>
+        {% else %}
+          <button name="action" value="mark_read" class="icon-btn" title="Mark read">○</button>
+        {% endif %}
+        {% if m.flagged %}
+          <button name="action" value="unflag" class="icon-btn" title="Unstar">★</button>
+        {% else %}
+          <button name="action" value="flag" class="icon-btn" title="Star">☆</button>
+        {% endif %}
+        <button name="action" value="delete" class="icon-btn danger" title="Delete">🗑</button>
+      </form>
+    </li>
+  {% empty %}
+    <li class="muted empty-row">No messages.</li>
+  {% endfor %}
+</ul>
+{% if total_pages > 1 %}
+<nav class="pagination">
+  {% if page > 1 %}
+    <a href="{% url 'webmail:mail' %}?folder={{ current_folder|urlencode }}&page={{ page|add:"-1" }}">‹ Prev</a>
+  {% endif %}
+  <span>Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}
+    <a href="{% url 'webmail:mail' %}?folder={{ current_folder|urlencode }}&page={{ page|add:"1" }}">Next ›</a>
+  {% endif %}
+</nav>
+{% endif %}

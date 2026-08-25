@@ -1,0 +1,40 @@
+{% extends "webmail/base.html" %}
+{% block title %}{{ current_folder }} — Novella Mail{% endblock %}
+{% block body %}
+<input type="checkbox" id="nav-toggle" class="nav-toggle-checkbox">
+<label for="nav-toggle" class="nav-overlay" aria-hidden="true"></label>
+<div class="app-shell {% if detail %}has-detail{% endif %}">
+  <header class="topbar">
+    <label for="nav-toggle" class="hamburger" aria-label="Toggle folders">☰</label>
+    <div class="brand">Novella Mail</div>
+    <a href="{% url 'webmail:compose' %}" class="btn btn-primary btn-compose">✎ Compose</a>
+    <div class="topbar-user">
+      {% if is_admin %}<a href="{% url 'webmail:admin_domains' %}">Domains</a>{% endif %}
+      <span class="user-email">{{ mail_email }}</span>
+      <a href="{% url 'webmail:logout' %}">Sign out</a>
+    </div>
+  </header>
+
+  {% if messages %}
+    <div class="flash">
+      {% for message in messages %}<p class="alert alert-{{ message.tags }}">{{ message }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  <nav class="folder-pane">
+    {% include "webmail/_folder_nav.html" %}
+  </nav>
+
+  <section class="list-pane">
+    {% include "webmail/_message_list.html" %}
+  </section>
+
+  <section class="detail-pane">
+    {% if detail %}
+      {% include "webmail/_message_detail.html" %}
+    {% else %}
+      <div class="empty-state">Select a message to read it.</div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
