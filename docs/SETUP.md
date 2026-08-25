@@ -121,6 +121,25 @@ Everything else about this repo — the mail engine's config/source, the
 panel's own code, and the compose wiring — is self-contained and needs no
 further network access to bring the stack up or down again afterwards.
 
+**"Pool overlaps with other one on this address space"**: `setup.sh` puts
+mailcow's internal docker network on `10.89.1.0/24` specifically to dodge
+the `172.16.0.0/12` range most Docker hosts auto-allocate project networks
+from (mailcow's own default, `172.22.1.0/24`, sits right inside that range
+and collides constantly on a box already running other docker-compose
+projects). If `10.89.1.0/24` *also* collides, check what's already taken:
+```
+docker network inspect $(docker network ls -q) -f '{{.Name}}: {{range .IPAM.Config}}{{.Subnet}} {{end}}'
+```
+then either re-run `MAILCOW_IPV4_NETWORK=x.x.x ./setup.sh` before first
+bringing the stack up, or fix it in place on an existing install:
+```
+sed -i \
+  -e "s/^IPV4_NETWORK=.*/IPV4_NETWORK=x.x.x/" \
+  -e "s/^API_ALLOW_FROM=.*/API_ALLOW_FROM=127.0.0.1,x.x.x.0\/24/" \
+  mailcow-dockerized/mailcow.conf
+docker compose up -d
+```
+
 ## 4. Firewall
 
 Open only the mail ports publicly. Do **not** open 3006, 3007, or 3008.

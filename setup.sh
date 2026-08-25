@@ -23,6 +23,13 @@ MAILCOW_UI_PORT="${MAILCOW_UI_PORT:-3006}"
 MAILCOW_UI_HTTPS_PORT="${MAILCOW_UI_HTTPS_PORT:-3008}"
 PANEL_PORT="${PANEL_PORT:-3007}"
 PANEL_BIND="${PANEL_BIND:-127.0.0.1}"
+# mailcow's own default (172.22.1.0/24) sits inside the 172.16.0.0/12 block
+# most Docker hosts auto-allocate project networks from, so it collides
+# constantly on a box that already runs several docker-compose projects.
+# 10.x is far less likely to already be in use. Override with
+# MAILCOW_IPV4_NETWORK=x.x.x ./setup.sh if this ALSO collides (check with
+# `docker network inspect $(docker network ls -q) -f '{{.Name}}: {{range .IPAM.Config}}{{.Subnet}} {{end}}'`).
+MAILCOW_IPV4_NETWORK="${MAILCOW_IPV4_NETWORK:-10.89.1}"
 
 echo "==> Checking prerequisites"
 command -v docker >/dev/null || { echo "docker is not installed. See https://docs.docker.com/engine/install/"; exit 1; }
@@ -41,9 +48,8 @@ echo "==> Running upstream config generator (you will be asked for the mail serv
 
 MAILCOW_API_KEY="$(LC_ALL=C </dev/urandom tr -dc 'A-Za-z0-9' 2>/dev/null | head -c 40)"
 MAILCOW_HOSTNAME="$(grep -E '^MAILCOW_HOSTNAME=' mailcow.conf | cut -d= -f2-)"
-IPV4_NETWORK="$(grep -E '^IPV4_NETWORK=' mailcow.conf | cut -d= -f2-)"
 
-echo "==> Patching mailcow.conf: mailcow's own UI moved to ${PANEL_BIND}:${MAILCOW_UI_PORT}, SOGo webmail disabled, mail ports left public, API enabled for the panel"
+echo "==> Patching mailcow.conf: mailcow's own UI moved to ${PANEL_BIND}:${MAILCOW_UI_PORT}, SOGo webmail disabled, mail ports left public, API enabled for the panel, internal subnet moved to ${MAILCOW_IPV4_NETWORK}.0/24"
 sed -i \
   -e "s/^HTTP_PORT=.*/HTTP_PORT=${MAILCOW_UI_PORT}/" \
   -e "s/^HTTP_BIND=.*/HTTP_BIND=${PANEL_BIND}/" \
@@ -53,7 +59,8 @@ sed -i \
   -e "s/^SKIP_LETS_ENCRYPT=.*/SKIP_LETS_ENCRYPT=y/" \
   -e "s/^SKIP_SOGO=.*/SKIP_SOGO=y/" \
   -e "s/^#*API_KEY=.*/API_KEY=${MAILCOW_API_KEY}/" \
-  -e "s/^#*API_ALLOW_FROM=.*/API_ALLOW_FROM=127.0.0.1,${IPV4_NETWORK}.0\/24/" \
+  -e "s/^#*API_ALLOW_FROM=.*/API_ALLOW_FROM=127.0.0.1,${MAILCOW_IPV4_NETWORK}.0\/24/" \
+  -e "s/^IPV4_NETWORK=.*/IPV4_NETWORK=${MAILCOW_IPV4_NETWORK}/" \
   mailcow.conf
 
 echo "==> Generating panel/.env"
@@ -87,6 +94,10 @@ Mail engine:     mailcow-dockerized/mailcow.conf
 Mailcow admin UI: http://${PANEL_BIND}:${MAILCOW_UI_PORT}  (domains, DKIM, quotas, spam - SOGo webmail disabled)
 Novella panel:    http://${PANEL_BIND}:${PANEL_PORT}  (the custom Django+HTMX send/manage-mail panel)
 Mail ports:       SMTP 25, SMTPS 465, Submission 587, IMAP 143, IMAPS 993, POP3 110/995, Sieve 4190 - all public.
+Internal subnet:  ${MAILCOW_IPV4_NETWORK}.0/24 (mailcow's docker network - if "docker compose up -d"
+                  fails with a "Pool overlaps" error, some other docker network on this host
+                  already uses that range; re-run with MAILCOW_IPV4_NETWORK=x.x.x ./setup.sh
+                  after checking `docker network ls` / `docker network inspect`).
 
 Next step - one command from the repo root brings up everything:
   docker compose up -d
