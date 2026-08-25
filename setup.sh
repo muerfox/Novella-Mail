@@ -44,7 +44,24 @@ cd "$STACK_DIR"
 ln -sf mailcow.conf .env
 
 echo "==> Running upstream config generator (you will be asked for the mail server's FQDN, e.g. mail.yourdomain.com, and timezone)"
+echo "    It writes mailcow.conf right away, then tails off into a purely cosmetic"
+echo "    git version-stamp step (for the mailcow UI footer) that can occasionally"
+echo "    stall after 'Copying snake-oil certificate...' for reasons unrelated to"
+echo "    this repo (git upstream-tracking quirks). If it sits there for more than"
+echo "    a minute or two after that line, Ctrl+C is safe - mailcow.conf is already"
+echo "    written by then, and this script continues from here regardless."
+set +e
 ./generate_config.sh
+gc_status=$?
+set -e
+if [ "$gc_status" -ne 0 ]; then
+  if [ -s mailcow.conf ]; then
+    echo "==> generate_config.sh didn't exit cleanly (status ${gc_status}) but mailcow.conf was written - continuing."
+  else
+    echo "generate_config.sh failed before writing mailcow.conf. Re-run ./setup.sh." >&2
+    exit 1
+  fi
+fi
 
 MAILCOW_API_KEY="$(LC_ALL=C </dev/urandom tr -dc 'A-Za-z0-9' 2>/dev/null | head -c 40)"
 MAILCOW_HOSTNAME="$(grep -E '^MAILCOW_HOSTNAME=' mailcow.conf | cut -d= -f2-)"
@@ -97,7 +114,8 @@ Mail ports:       SMTP 25, SMTPS 465, Submission 587, IMAP 143, IMAPS 993, POP3 
 Internal subnet:  ${MAILCOW_IPV4_NETWORK}.0/24 (mailcow's docker network - if "docker compose up -d"
                   fails with a "Pool overlaps" error, some other docker network on this host
                   already uses that range; re-run with MAILCOW_IPV4_NETWORK=x.x.x ./setup.sh
-                  after checking `docker network ls` / `docker network inspect`).
+                  after checking with docker network ls / docker network inspect - see
+                  docs/SETUP.md for the exact command).
 
 Next step - one command from the repo root brings up everything:
   docker compose up -d
