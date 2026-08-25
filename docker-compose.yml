@@ -1,0 +1,10 @@
+# Single entry point: `docker compose up -d` from this directory brings up
+# the whole stack (mail engine + panel) as one project. See docs/SETUP.md.
+#
+# Requires Docker Compose >= 2.20 for `include:` (part of any current Docker
+# Engine install; check with `docker compose version`).
+name: novella-mail
+
+include:
+  - path: mailcow-dockerized/docker-compose.yml
+  - path: panel/docker-compose.yml

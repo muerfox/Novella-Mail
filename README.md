@@ -32,8 +32,19 @@ Port layout:
 ## Quickstart
 
 ```
+git clone --recurse-submodules <this-repo-url>
+cd Novella-Mail
 ./setup.sh
+docker compose up -d
 ```
+
+That last command is the only one you need for day-to-day up/down after
+setup — the root `docker-compose.yml` brings up the mail engine and the
+panel together as one project. Everything needed to do that is vendored in
+this repo (mailcow-dockerized as a pinned git submodule, the panel's own
+source, htmx vendored with no CDN dependency); the only thing that still
+needs internet access is the first `docker compose up -d` itself, to
+pull/build the container images.
 
 Then see [docs/SETUP.md](docs/SETUP.md) for DNS records, firewall rules,
 reaching the panels, first login, and the TLS tradeoff that comes with
@@ -41,9 +52,13 @@ keeping everything localhost-only.
 
 ## Layout
 
-- `setup.sh` — fetches mailcow-dockerized, configures the port split above,
-  and generates `panel/.env`.
+- `docker-compose.yml` — the single entry point; `include:`s the two below
+  into one project.
+- `setup.sh` — checks out the mailcow-dockerized submodule if needed,
+  configures the port split above, and generates `panel/.env`.
+- `mailcow-dockerized/` — the mail engine, vendored as a git submodule
+  (pinned to a release tag; `.gitmodules` has the upstream URL). Updates via
+  the normal `git pull` / `./update.sh` inside it, then commit the new
+  pinned commit in this repo.
 - `panel/` — the Django + HTMX panel (see `panel/webmail/` for the app).
 - `docs/SETUP.md` — full walkthrough.
-- `mailcow-dockerized/` — created by `setup.sh`, not committed (it manages
-  its own updates via `git pull` / `update.sh`).

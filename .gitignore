@@ -1,6 +1,6 @@
-# mailcow-dockerized is fetched by setup.sh, not vendored in this repo.
-# It manages its own updates via `./update.sh` (git pull), so we don't commit it here.
-/mailcow-dockerized/
+# mailcow-dockerized is vendored as a git submodule (see .gitmodules) - it's
+# a nested repo with its own .gitignore, so nothing from inside it needs
+# listing here; this repo only tracks the pinned commit (the gitlink).
 
 # Never commit secrets
 *.env

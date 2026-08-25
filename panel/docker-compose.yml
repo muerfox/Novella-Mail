@@ -10,16 +10,19 @@ services:
       - "127.0.0.1:${PANEL_PORT:-3007}:8000"
     networks:
       - default
-      - mailcow
+      - mailcow-network
 
 volumes:
   panel_data:
 
 networks:
   default:
-  # Joins mailcow-dockerized's own network so the panel can call its admin
-  # API at http://nginx:<port> directly, without exposing that API publicly.
-  # Must already exist - i.e. mailcow-dockerized has to be up first.
-  mailcow:
-    name: ${MAILCOW_NETWORK_NAME:-mailcowdockerized_mailcow-network}
-    external: true
+  # mailcow-network is really defined by mailcow-dockerized/docker-compose.yml
+  # (driver, IPAM, etc.) - this empty entry just lets this file validate and
+  # attach to it on its own. When brought up together via the root
+  # docker-compose.yml's `include:`, both files merge into one project and
+  # this resolves to that same real network, so the panel can reach
+  # mailcow's admin API container-to-container (see webmail/mailcow_api.py).
+  # Standing this file up on its own (without the root include) will instead
+  # create a fresh, empty "mailcow-network" with no mailcow containers on it.
+  mailcow-network: {}

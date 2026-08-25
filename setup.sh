@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 #
 # Novella-Mail setup:
-#  1. Fetches mailcow-dockerized (Postfix/Dovecot/Rspamd/ClamAV) as the mail
-#     engine, with SOGo webmail disabled and its own admin UI moved to a
-#     second localhost-only port (3006) - domains/DKIM/quotas/spam settings
-#     live there until the custom panel covers them too.
+#  1. Makes sure mailcow-dockerized (Postfix/Dovecot/Rspamd/ClamAV, vendored
+#     as a git submodule - no network fetch needed at setup time) is
+#     checked out, with SOGo webmail disabled and its own admin UI moved to
+#     a second localhost-only port (3006) - domains/DKIM/quotas/spam
+#     settings live there until the custom panel covers them too.
 #  2. Generates panel/.env for the custom Django+HTMX panel, which becomes
 #     the primary panel on 127.0.0.1:3007.
+#
+# Everything then comes up with one command from the repo root:
+#   docker compose up -d
 #
 # Run this ON THE TARGET SERVER, not on your dev machine.
 set -euo pipefail
@@ -24,12 +28,9 @@ echo "==> Checking prerequisites"
 command -v docker >/dev/null || { echo "docker is not installed. See https://docs.docker.com/engine/install/"; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "docker compose plugin is not available."; exit 1; }
 
-if [ -d "$STACK_DIR/.git" ]; then
-  echo "==> mailcow-dockerized already present, pulling latest"
-  git -C "$STACK_DIR" pull
-else
-  echo "==> Cloning mailcow-dockerized"
-  git clone https://github.com/mailcow/mailcow-dockerized.git "$STACK_DIR"
+if [ ! -f "${STACK_DIR}/docker-compose.yml" ]; then
+  echo "==> mailcow-dockerized submodule not checked out yet, fetching it"
+  git -C "$ROOT_DIR" submodule update --init --recursive
 fi
 
 cd "$STACK_DIR"
@@ -41,8 +42,6 @@ echo "==> Running upstream config generator (you will be asked for the mail serv
 MAILCOW_API_KEY="$(LC_ALL=C </dev/urandom tr -dc 'A-Za-z0-9' 2>/dev/null | head -c 40)"
 MAILCOW_HOSTNAME="$(grep -E '^MAILCOW_HOSTNAME=' mailcow.conf | cut -d= -f2-)"
 IPV4_NETWORK="$(grep -E '^IPV4_NETWORK=' mailcow.conf | cut -d= -f2-)"
-COMPOSE_PROJECT_NAME="$(grep -E '^COMPOSE_PROJECT_NAME=' mailcow.conf | cut -d= -f2-)"
-MAILCOW_NETWORK_NAME="${COMPOSE_PROJECT_NAME}_mailcow-network"
 
 echo "==> Patching mailcow.conf: mailcow's own UI moved to ${PANEL_BIND}:${MAILCOW_UI_PORT}, SOGo webmail disabled, mail ports left public, API enabled for the panel"
 sed -i \
@@ -72,7 +71,6 @@ if [ ! -f .env ]; then
     -e "s/^MAILCOW_API_BASE_URL=.*/MAILCOW_API_BASE_URL=http:\/\/nginx:${MAILCOW_UI_PORT}/" \
     -e "s/^MAILCOW_API_KEY=.*/MAILCOW_API_KEY=${MAILCOW_API_KEY}/" \
     -e "s/^MAILCOW_HOSTNAME=.*/MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME}/" \
-    -e "s/^MAILCOW_NETWORK_NAME=.*/MAILCOW_NETWORK_NAME=${MAILCOW_NETWORK_NAME}/" \
     .env
   echo "    Wrote panel/.env (MAIL_TLS_INSECURE=true because SKIP_LETS_ENCRYPT=y gives a"
   echo "    self-signed cert - flip it to false once you've set up a trusted cert, see"
@@ -90,16 +88,18 @@ Mailcow admin UI: http://${PANEL_BIND}:${MAILCOW_UI_PORT}  (domains, DKIM, quota
 Novella panel:    http://${PANEL_BIND}:${PANEL_PORT}  (the custom Django+HTMX send/manage-mail panel)
 Mail ports:       SMTP 25, SMTPS 465, Submission 587, IMAP 143, IMAPS 993, POP3 110/995, Sieve 4190 - all public.
 
-Next steps:
-  cd mailcow-dockerized && docker compose pull && docker compose up -d
-  cd ../panel && docker compose build && docker compose up -d
+Next step - one command from the repo root brings up everything:
+  docker compose up -d
+
+(The first run pulls/builds every image - it needs internet for that one
+time. After the images are local, bringing the stack up/down again doesn't.)
 
 Then, to unlock self-service domain adding in the panel ("Domains" section):
   1. Log into the mailcow admin UI (http://${PANEL_BIND}:${MAILCOW_UI_PORT}, admin/moohoo,
      change the password) and create your first domain + mailbox.
   2. Log into the Novella panel with that mailbox's email + password.
   3. Add that same email to ADMIN_EMAILS in panel/.env, then:
-     cd panel && docker compose up -d
+     docker compose up -d
   From then on, any further domain just needs its MX pointed at
   ${MAILCOW_HOSTNAME:-your mail server} and adding via the panel's Domains page - no
   more manual mailcow-admin-UI steps.

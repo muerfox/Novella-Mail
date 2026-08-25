@@ -1,13 +1,18 @@
 # Setup
 
-Two pieces, both in Docker:
+Two pieces, both in Docker, brought up together with one `docker compose up
+-d` from the repo root (see `docker-compose.yml`, which just `include:`s
+each piece's own compose file into a single project):
 
 - **Mail engine** — [mailcow-dockerized](https://github.com/mailcow/mailcow-dockerized):
-  Postfix + Dovecot + Rspamd + ClamAV. It's multi-domain by design — one
-  mail server can host any number of unrelated domains, each with its own
-  mailboxes and DKIM key. SOGo webmail is disabled; mailcow's own admin UI
-  stays up as a secondary, localhost-only panel for things the custom panel
-  doesn't cover yet (quotas, spam rules, ClamAV).
+  Postfix + Dovecot + Rspamd + ClamAV. Vendored in this repo as a git
+  submodule (`mailcow-dockerized/`, pinned to a release tag) — cloning this
+  repo with `--recurse-submodules` gets you the whole thing, no separate
+  fetch at deploy time. It's multi-domain by design — one mail server can
+  host any number of unrelated domains, each with its own mailboxes and
+  DKIM key. SOGo webmail is disabled; mailcow's own admin UI stays up as a
+  secondary, localhost-only panel for things the custom panel doesn't cover
+  yet (quotas, spam rules, ClamAV).
 - **Panel** (`panel/`) — a custom Django + HTMX app that's the primary,
   everyday UI: send/read/manage mail (a plain IMAP/SMTP client, like
   Thunderbird would be) plus a **Domains** section for adding domains and
@@ -24,10 +29,20 @@ You need:
 
 - A server with a public, static IP.
 - A domain you control DNS for.
-- Docker Engine >= 24 and the `docker compose` plugin installed on the server.
+- Docker Engine >= 24 and the `docker compose` plugin (>= 2.20, for the
+  `include:` the root `docker-compose.yml` uses) installed on the server.
 - Port **25 outbound** not blocked by your hosting provider (many cloud
   providers block it by default for new accounts — check with them first,
   otherwise you can't send mail).
+
+Get the repo onto the server with submodules included in one shot:
+
+```
+git clone --recurse-submodules <this-repo-url>
+```
+
+(If you already cloned without `--recurse-submodules`, `./setup.sh` fetches
+it for you, or run `git submodule update --init --recursive` yourself.)
 
 ## 2. DNS records
 
@@ -69,9 +84,11 @@ pointing at the same `mail.example.com`.
 
 This:
 
-1. Clones `mailcow-dockerized` next to this repo and runs its official
+1. Makes sure the `mailcow-dockerized` submodule is checked out (fetches it
+   if you skipped `--recurse-submodules`), then runs its official
    `generate_config.sh` (asks for `mail.example.com` as the hostname, and
-   your timezone).
+   your timezone) — this needs the submodule's own `.git`, which is exactly
+   why it's vendored as a real submodule and not plain copied-in files.
 2. Patches `mailcow-dockerized/mailcow.conf` so:
    - Mailcow's own web UI binds to `127.0.0.1:3006` (and `:3008` for https)
      — **not reachable from the internet**.
@@ -83,19 +100,26 @@ This:
      this is what lets the panel manage domains/mailboxes.
 3. Generates `panel/.env` from `panel/.env.example`, filling in a random
    `DJANGO_SECRET_KEY`, pointing `MAIL_IMAP_HOST`/`MAIL_SMTP_HOST` at your
-   `MAILCOW_HOSTNAME`, and wiring up `MAILCOW_API_KEY`/`MAILCOW_API_BASE_URL`/
-   `MAILCOW_NETWORK_NAME` so the panel can reach mailcow's API.
+   `MAILCOW_HOSTNAME`, and wiring up `MAILCOW_API_KEY`/`MAILCOW_API_BASE_URL`
+   so the panel can reach mailcow's API.
 
-Then bring both stacks up, mailcow first (the panel joins its docker network,
-so it has to already exist):
+Then bring everything up with one command from the **repo root**:
 
 ```
-cd mailcow-dockerized && docker compose pull && docker compose up -d
-cd ../panel && docker compose build && docker compose up -d
+docker compose up -d
 ```
 
-First boot of mailcow takes a few minutes (DB init, etc). Watch it with
-`docker compose logs -f`.
+The root `docker-compose.yml` just `include:`s `mailcow-dockerized/docker-
+compose.yml` and `panel/docker-compose.yml` into a single project, so this
+one command builds the panel image and pulls every mailcow image, creates
+the shared internal network, and starts all of it together. First boot
+takes a few minutes (DB init, etc). Watch it with `docker compose logs -f`.
+
+That first `up -d` needs internet access to pull/build images (there's no
+practical way to vendor multi-gigabyte container images into a git repo).
+Everything else about this repo — the mail engine's config/source, the
+panel's own code, and the compose wiring — is self-contained and needs no
+further network access to bring the stack up or down again afterwards.
 
 ## 4. Firewall
 
@@ -153,7 +177,8 @@ panel.
 **Unlock the Domains section** for that account:
 1. Edit `panel/.env`, set `ADMIN_EMAILS=` to that mailbox's email (comma
    separate more if needed).
-2. `cd panel && docker compose up -d` to pick it up.
+2. From the repo root: `docker compose up -d` (only the `panel` service
+   restarts; mailcow is untouched).
 3. Log out and back into the panel — a "Domains" link now shows in the
    top bar.
 
@@ -176,10 +201,10 @@ ACME_DNS_PROVIDER=dns_xxx   # your DNS provider's acme.sh plugin name
 ACME_ACCOUNT_EMAIL=you@example.com
 ```
 plus the provider-specific API credentials as env vars (see the comments in
-`mailcow.conf` and https://docs.mailcow.email for your DNS provider). Then
-`docker compose up -d` to restart the ACME container. Once it's issued a
-real cert, set `MAIL_TLS_INSECURE=false` in `panel/.env` and
-`docker compose up -d` in `panel/` to pick it up.
+`mailcow.conf` and https://docs.mailcow.email for your DNS provider). Then,
+from the repo root, `docker compose up -d` to restart the ACME container.
+Once it's issued a real cert, set `MAIL_TLS_INSECURE=false` in `panel/.env`
+and `docker compose up -d` again to pick it up.
 
 **Option B — temporarily expose 80/443.** Open those ports publicly, set
 `HTTP_BIND=`, `HTTPS_BIND=`, `SKIP_LETS_ENCRYPT=n`, bring the stack up so
@@ -189,19 +214,24 @@ for a permanently-locked-down setup.
 
 ## 8. Updating
 
-Mail engine:
+Mail engine — since it's a real git checkout (just vendored as a submodule
+instead of fetched fresh), mailcow's own update flow works as documented:
 ```
 cd mailcow-dockerized
 git pull
 ./update.sh
 ```
 Never hand-edit files under `mailcow-dockerized/data/` — `update.sh`
-overwrites them.
+overwrites them. Afterwards, from the repo root, commit the submodule's new
+pinned commit so it's recorded in this repo's history:
+```
+git add mailcow-dockerized
+git commit -m "Update mailcow-dockerized"
+```
 
 Panel:
 ```
-cd panel
-docker compose build --no-cache
+docker compose build panel
 docker compose up -d
 ```
 
