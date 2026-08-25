@@ -1,142 +1,166 @@
 #!/usr/bin/env bash
 #
-# Novella-Mail setup:
-#  1. Makes sure mailcow-dockerized (Postfix/Dovecot/Rspamd/ClamAV, vendored
-#     as a git submodule - no network fetch needed at setup time) is
-#     checked out, with SOGo webmail disabled and its own admin UI moved to
-#     a second localhost-only port (3006) - domains/DKIM/quotas/spam
-#     settings live there until the custom panel covers them too.
-#  2. Generates panel/.env for the custom Django+HTMX panel, which becomes
-#     the primary panel on 127.0.0.1:3009.
+# setup.sh - the entire install step for Novella-Mail.
 #
-# Everything then comes up with one command from the repo root:
-#   docker compose up -d
+# All it really does is create a `.env` file (copied from `.env.example`,
+# with a few values filled in) and, if you want, walk you through bringing
+# the stack up and creating your first mailbox. There's no separate config
+# generator to run and nothing to vendor: the mail server
+# (docker-mailserver) is a single prebuilt Docker image, and the panel
+# manages it entirely by writing into a shared config volume.
 #
-# Run this ON THE TARGET SERVER, not on your dev machine.
+# Safe to re-run: if `.env` already exists, this script won't touch it - it
+# only asks questions and generates secrets the very first time.
+#
+# Run this ON THE SERVER where you actually want mail hosted, not on your
+# laptop/dev machine (unless that's the same thing).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STACK_DIR="${ROOT_DIR}/mailcow-dockerized"
-PANEL_DIR="${ROOT_DIR}/panel"
+cd "$ROOT_DIR"
 
-MAILCOW_UI_PORT="${MAILCOW_UI_PORT:-3006}"
-MAILCOW_UI_HTTPS_PORT="${MAILCOW_UI_HTTPS_PORT:-3008}"
-PANEL_PORT="${PANEL_PORT:-3009}"
-PANEL_BIND="${PANEL_BIND:-127.0.0.1}"
-# mailcow's own default (172.22.1.0/24) sits inside the 172.16.0.0/12 block
-# most Docker hosts auto-allocate project networks from, so it collides
-# constantly on a box that already runs several docker-compose projects.
-# 10.x is far less likely to already be in use. Override with
-# MAILCOW_IPV4_NETWORK=x.x.x ./setup.sh if this ALSO collides (check with
-# `docker network inspect $(docker network ls -q) -f '{{.Name}}: {{range .IPAM.Config}}{{.Subnet}} {{end}}'`).
-MAILCOW_IPV4_NETWORK="${MAILCOW_IPV4_NETWORK:-10.89.1}"
+# --- small helpers -------------------------------------------------------
+
+# Ask a yes/no question with a default. Usage: ask_yes_no "Question?" Y
+ask_yes_no() {
+  local question="$1" default="${2:-Y}" reply
+  local hint="[Y/n]"
+  [ "$default" = "N" ] && hint="[y/N]"
+  read -r -p "${question} ${hint} " reply
+  reply="${reply:-$default}"
+  [[ "$reply" =~ ^[Yy] ]]
+}
+
+# Very loose FQDN sanity check: needs at least one dot and no whitespace.
+# Not trying to be a strict RFC validator here - just catch obvious typos
+# ("mailexamplecom", a pasted URL with a scheme, stray spaces) before they
+# end up baked into .env.
+looks_like_a_domain() {
+  [[ "$1" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,}$ ]]
+}
+
+# --- 1. prerequisites ------------------------------------------------------
 
 echo "==> Checking prerequisites"
 command -v docker >/dev/null || { echo "docker is not installed. See https://docs.docker.com/engine/install/"; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "docker compose plugin is not available."; exit 1; }
 
-if [ ! -f "${STACK_DIR}/docker-compose.yml" ]; then
-  echo "==> mailcow-dockerized submodule not checked out yet, fetching it"
-  git -C "$ROOT_DIR" submodule update --init --recursive
+# --- 2. generate .env (only if it doesn't exist yet) ----------------------
+
+if [ -f .env ]; then
+  echo "==> .env already exists, leaving it alone."
+else
+  cp .env.example .env
+
+  # Keep asking until we get something that at least looks like a domain.
+  # Empty input always loops; a domain-shaped answer is accepted straight
+  # away; anything else gets a warning with the option to use it anyway
+  # (in case the check is wrong for someone's edge case).
+  MAIL_DOMAIN=""
+  while [ -z "$MAIL_DOMAIN" ]; do
+    read -r -p "Mail server hostname (FQDN, e.g. mail.yourdomain.com - this is the server's own identity, not a domain you're hosting mail for): " CANDIDATE
+    if [ -z "$CANDIDATE" ]; then
+      continue
+    elif looks_like_a_domain "$CANDIDATE"; then
+      MAIL_DOMAIN="$CANDIDATE"
+    elif ask_yes_no "'${CANDIDATE}' doesn't look like a normal hostname - use it anyway?" N; then
+      MAIL_DOMAIN="$CANDIDATE"
+    fi
+  done
+
+  # Debian/Ubuntu keep the system timezone name in /etc/timezone (e.g.
+  # "Europe/Berlin") - offer that as the default so most people can just
+  # hit enter.
+  DETECTED_TZ="UTC"
+  if [ -f /etc/timezone ]; then
+    DETECTED_TZ="$(cat /etc/timezone)"
+  fi
+  read -r -p "Timezone [${DETECTED_TZ}]: " TZ_INPUT
+  TZ_VALUE="${TZ_INPUT:-$DETECTED_TZ}"
+
+  # Generate a random Django secret key. NOTE on the pipeline shape below:
+  # bounding the /dev/urandom read to a fixed size *before* filtering, then
+  # truncating in bash, is deliberate. The tempting one-liner
+  #   </dev/urandom tr -dc 'A-Za-z0-9' | head -c 50
+  # pipes an *unbounded* stream through `tr` into `head -c 50`: as soon as
+  # head has its 50 bytes it closes its end of the pipe, and tr - which is
+  # still trying to write more, since urandom never runs out - can get
+  # SIGPIPE'd for writing to a reader that already left. Under `set -e -o
+  # pipefail` that intermittently (it's a timing race, so it doesn't fail
+  # every time - which makes it a nasty one to debug) kills the whole
+  # script with no useful error message. Reading a fixed amount first sidesteps
+  # the race entirely: `head -c 512 /dev/urandom` reads exactly 512 bytes
+  # and stops on its own, nothing is still trying to write afterwards.
+  RAW_RANDOM="$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9')"
+  SECRET_KEY="${RAW_RANDOM:0:50}"
+
+  # `#` as the sed delimiter for the TZ line specifically, since timezone
+  # names contain forward slashes (Europe/Berlin, America/New_York, ...)
+  # which would otherwise collide with sed's default `/` delimiter and
+  # break the expression.
+  sed -i \
+    -e "s/^MAIL_DOMAIN=.*/MAIL_DOMAIN=${MAIL_DOMAIN}/" \
+    -e "s#^TZ=.*#TZ=${TZ_VALUE}#" \
+    -e "s/^DJANGO_SECRET_KEY=.*/DJANGO_SECRET_KEY=${SECRET_KEY}/" \
+    -e "s/^DJANGO_ALLOWED_HOSTS=.*/DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost,${MAIL_DOMAIN}/" \
+    .env
+
+  echo "==> Wrote .env for ${MAIL_DOMAIN}"
 fi
 
-cd "$STACK_DIR"
-ln -sf mailcow.conf .env
+# --- 3. optionally do the rest for you -------------------------------------
+# Everything past this point is optional hand-holding: bring the stack up,
+# create the first mailbox, and wire it into ADMIN_EMAILS, all without
+# having to look up and copy/paste the commands yourself. Say no to any of
+# these and docs/SETUP.md has the exact manual commands instead.
 
-echo "==> Running upstream config generator (you will be asked for the mail server's FQDN, e.g. mail.yourdomain.com, and timezone)"
-echo "    It writes mailcow.conf right away, then tails off into a purely cosmetic"
-echo "    git version-stamp step (for the mailcow UI footer) that can occasionally"
-echo "    stall after 'Copying snake-oil certificate...' for reasons unrelated to"
-echo "    this repo (git upstream-tracking quirks). If it sits there for more than"
-echo "    a minute or two after that line, Ctrl+C is safe - mailcow.conf is already"
-echo "    written by then, and this script continues from here regardless."
-set +e
-./generate_config.sh
-gc_status=$?
-set -e
-if [ "$gc_status" -ne 0 ]; then
-  if [ -s mailcow.conf ]; then
-    echo "==> generate_config.sh didn't exit cleanly (status ${gc_status}) but mailcow.conf was written - continuing."
-  else
-    echo "generate_config.sh failed before writing mailcow.conf. Re-run ./setup.sh." >&2
-    exit 1
+MAILBOX_CREATED=""
+
+echo
+if ask_yes_no "Bring the stack up now (docker compose up -d)? First run pulls images, needs internet." Y; then
+  docker compose up -d
+
+  echo
+  if ask_yes_no "Create your first mailbox now? (the panel needs one to log in with)" Y; then
+    read -r -p "Email address for the first mailbox (e.g. you@yourdomain.com): " FIRST_EMAIL
+    # createmailbox prompts for the password itself (hidden input) - not
+    # passed as a --password flag here on purpose, so it never ends up in
+    # this script's process list or shell history.
+    if docker compose exec panel python manage.py createmailbox "$FIRST_EMAIL"; then
+      MAILBOX_CREATED="$FIRST_EMAIL"
+      echo
+      if ask_yes_no "Add ${FIRST_EMAIL} to ADMIN_EMAILS so it can manage domains from the panel's Domains section?" Y; then
+        if grep -q "^ADMIN_EMAILS=$" .env; then
+          sed -i "s/^ADMIN_EMAILS=.*/ADMIN_EMAILS=${FIRST_EMAIL}/" .env
+        else
+          # ADMIN_EMAILS already has something in it (re-run of setup, or
+          # hand-edited) - append rather than clobber whoever's there.
+          sed -i "s/^ADMIN_EMAILS=.*/&,${FIRST_EMAIL}/" .env
+        fi
+        docker compose up -d
+        echo "==> Done - log in at the panel and you'll see a Domains link."
+      fi
+    else
+      echo "Mailbox creation failed - see docs/SETUP.md section 6 to try again by hand." >&2
+    fi
   fi
 fi
 
-MAILCOW_API_KEY="$(LC_ALL=C </dev/urandom tr -dc 'A-Za-z0-9' 2>/dev/null | head -c 40)"
-MAILCOW_HOSTNAME="$(grep -E '^MAILCOW_HOSTNAME=' mailcow.conf | cut -d= -f2-)"
-
-echo "==> Patching mailcow.conf: mailcow's own UI moved to ${PANEL_BIND}:${MAILCOW_UI_PORT}, SOGo webmail disabled, mail ports left public, API enabled for the panel, internal subnet moved to ${MAILCOW_IPV4_NETWORK}.0/24"
-sed -i \
-  -e "s/^HTTP_PORT=.*/HTTP_PORT=${MAILCOW_UI_PORT}/" \
-  -e "s/^HTTP_BIND=.*/HTTP_BIND=${PANEL_BIND}/" \
-  -e "s/^HTTPS_PORT=.*/HTTPS_PORT=${MAILCOW_UI_HTTPS_PORT}/" \
-  -e "s/^HTTPS_BIND=.*/HTTPS_BIND=${PANEL_BIND}/" \
-  -e "s/^HTTP_REDIRECT=.*/HTTP_REDIRECT=n/" \
-  -e "s/^SKIP_LETS_ENCRYPT=.*/SKIP_LETS_ENCRYPT=y/" \
-  -e "s/^SKIP_SOGO=.*/SKIP_SOGO=y/" \
-  -e "s/^#*API_KEY=.*/API_KEY=${MAILCOW_API_KEY}/" \
-  -e "s/^#*API_ALLOW_FROM=.*/API_ALLOW_FROM=127.0.0.1,${MAILCOW_IPV4_NETWORK}.0\/24/" \
-  -e "s/^IPV4_NETWORK=.*/IPV4_NETWORK=${MAILCOW_IPV4_NETWORK}/" \
-  mailcow.conf
-
-echo "==> Generating panel/.env"
-cd "$PANEL_DIR"
-if [ ! -f .env ]; then
-  cp .env.example .env
-  SECRET_KEY="$(LC_ALL=C </dev/urandom tr -dc 'A-Za-z0-9' 2>/dev/null | head -c 50)"
-  sed -i \
-    -e "s/^DJANGO_SECRET_KEY=.*/DJANGO_SECRET_KEY=${SECRET_KEY}/" \
-    -e "s/^DJANGO_DEBUG=.*/DJANGO_DEBUG=false/" \
-    -e "s/^DJANGO_ALLOWED_HOSTS=.*/DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost,${MAILCOW_HOSTNAME}/" \
-    -e "s/^MAIL_IMAP_HOST=.*/MAIL_IMAP_HOST=${MAILCOW_HOSTNAME}/" \
-    -e "s/^MAIL_SMTP_HOST=.*/MAIL_SMTP_HOST=${MAILCOW_HOSTNAME}/" \
-    -e "s/^MAIL_TLS_INSECURE=.*/MAIL_TLS_INSECURE=true/" \
-    -e "s/^MAILCOW_API_BASE_URL=.*/MAILCOW_API_BASE_URL=http:\/\/nginx:${MAILCOW_UI_PORT}/" \
-    -e "s/^MAILCOW_API_KEY=.*/MAILCOW_API_KEY=${MAILCOW_API_KEY}/" \
-    -e "s/^MAILCOW_HOSTNAME=.*/MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME}/" \
-    -e "s/^PANEL_PORT=.*/PANEL_PORT=${PANEL_PORT}/" \
-    .env
-  echo "    Wrote panel/.env (MAIL_TLS_INSECURE=true because SKIP_LETS_ENCRYPT=y gives a"
-  echo "    self-signed cert - flip it to false once you've set up a trusted cert, see"
-  echo "    docs/SETUP.md section 7)."
-else
-  echo "    panel/.env already exists, leaving it alone."
-fi
-
-echo "==> Generating root .env (what docker compose actually reads when run from here)"
-"${ROOT_DIR}/sync-env.sh"
-
 cat <<EOF
 
-==> Done.
+==> Setup finished.
 
-Mail engine:     mailcow-dockerized/mailcow.conf
-Mailcow admin UI: http://${PANEL_BIND}:${MAILCOW_UI_PORT}  (domains, DKIM, quotas, spam - SOGo webmail disabled)
-Novella panel:    http://${PANEL_BIND}:${PANEL_PORT}  (the custom Django+HTMX send/manage-mail panel)
-Mail ports:       SMTP 25, SMTPS 465, Submission 587, IMAP 143, IMAPS 993, POP3 110/995, Sieve 4190 - all public.
-Internal subnet:  ${MAILCOW_IPV4_NETWORK}.0/24 (mailcow's docker network - if "docker compose up -d"
-                  fails with a "Pool overlaps" error, some other docker network on this host
-                  already uses that range; re-run with MAILCOW_IPV4_NETWORK=x.x.x ./setup.sh
-                  after checking with docker network ls / docker network inspect - see
-                  docs/SETUP.md for the exact command).
+Mail ports:  SMTP 25, SMTPS 465, Submission 587, IMAP 143, IMAPS 993, POP3 110/995 - all public.
+Panel:       127.0.0.1:\${PANEL_PORT:-3010} - put your own reverse proxy in front of it.
+EOF
 
-Next step - one command from the repo root brings up everything:
-  docker compose up -d
+if [ -n "$MAILBOX_CREATED" ]; then
+  echo "Log in at the panel with ${MAILBOX_CREATED} and the password you just set."
+else
+  echo "Next: bring the stack up and create your first mailbox - see docs/SETUP.md sections 3 and 6."
+fi
 
-(The first run pulls/builds every image - it needs internet for that one
-time. After the images are local, bringing the stack up/down again doesn't.)
-
-Then, to unlock self-service domain adding in the panel ("Domains" section):
-  1. Log into the mailcow admin UI (http://${PANEL_BIND}:${MAILCOW_UI_PORT}, admin/moohoo,
-     change the password) and create your first domain + mailbox.
-  2. Log into the Novella panel with that mailbox's email + password.
-  3. Add that same email to ADMIN_EMAILS in panel/.env, then:
-     ./sync-env.sh && docker compose up -d
-  From then on, any further domain just needs its MX pointed at
-  ${MAILCOW_HOSTNAME:-your mail server} and adding via the panel's Domains page - no
-  more manual mailcow-admin-UI steps.
-
-Read docs/SETUP.md for DNS records, firewall rules, first login, and how to
-get a trusted TLS cert instead of the self-signed one.
+cat <<'EOF'
+To update later: ./update.sh
+Full reference, DNS records, firewall rules, and the TLS tradeoff: docs/SETUP.md
 EOF

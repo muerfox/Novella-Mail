@@ -22,16 +22,15 @@
       <h2>Add a domain</h2>
       <p class="muted">
         Any domain works here as long as its MX record points at this server.
-        Add it, then open its page for the exact DNS records to publish.
+        There's no separate "create" step - type it, then generate DKIM and
+        add a mailbox on its page and it's live.
       </p>
       <form method="post" class="compose-form">
         {% csrf_token %}
         <label for="{{ form.domain.id_for_label }}">Domain</label>
         {{ form.domain }}
         {% for err in form.domain.errors %}<p class="field-error">{{ err }}</p>{% endfor %}
-        <label for="{{ form.description.id_for_label }}">Description (optional)</label>
-        {{ form.description }}
-        <button type="submit" class="btn btn-primary">Add domain</button>
+        <button type="submit" class="btn btn-primary">Go to domain</button>
       </form>
     </section>
 
@@ -40,20 +39,20 @@
       <div class="table-scroll">
         <table class="admin-table">
           <thead>
-            <tr><th>Domain</th><th>Mailboxes</th><th>Status</th><th></th></tr>
+            <tr><th>Domain</th><th>Mailboxes</th><th>DKIM</th><th></th></tr>
           </thead>
           <tbody>
             {% for d in domains %}
               <tr>
-                <td><a href="{% url 'webmail:admin_domain_detail' domain=d.domain_name %}">{{ d.domain_name }}</a></td>
-                <td>{{ d.mboxes_in_domain }} / {{ d.max_num_mboxes_for_domain }}</td>
+                <td><a href="{% url 'webmail:admin_domain_detail' domain=d.domain %}">{{ d.domain }}</a></td>
+                <td>{{ d.mailbox_count }}</td>
                 <td>
-                  {% if d.active == "1" %}<span class="tag-active">active</span>{% else %}<span class="muted">inactive</span>{% endif %}
+                  {% if d.has_dkim %}<span class="tag-active">signed</span>{% else %}<span class="muted">not set up</span>{% endif %}
                 </td>
                 <td>
-                  <form method="post" action="{% url 'webmail:admin_domain_action' %}" hx-confirm="Delete {{ d.domain_name }} and all its mailboxes? This can't be undone.">
+                  <form method="post" action="{% url 'webmail:admin_domain_action' %}" hx-confirm="Delete {{ d.domain }} and all its mailboxes? This can't be undone.">
                     {% csrf_token %}
-                    <input type="hidden" name="domain" value="{{ d.domain_name }}">
+                    <input type="hidden" name="domain" value="{{ d.domain }}">
                     <button name="action" value="delete" class="icon-btn danger">Delete</button>
                   </form>
                 </td>

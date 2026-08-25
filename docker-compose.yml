@@ -1,18 +1,119 @@
 # Single entry point: `docker compose up -d` from this directory brings up
-# the whole stack (mail engine + panel) as one project. See docs/SETUP.md.
+# the whole stack (mail engine + panel) as one project. See docs/SETUP.md
+# for the full setup walkthrough, or README.md for a quicker overview.
 #
-# Requires Docker Compose >= 2.20 for `include:` (part of any current Docker
-# Engine install; check with `docker compose version`).
+# Two services:
+#   - mailserver: docker-mailserver (Postfix + Dovecot + Rspamd), a single
+#     prebuilt image - nothing to build, nothing vendored in this repo.
+#   - panel: the custom Django + HTMX app in panel/, built from source.
 #
-# Variables (TZ, DBPASS, MAILCOW_HOSTNAME, DJANGO_SECRET_KEY, ...) come from
-# a root .env file that `./setup.sh` generates by merging mailcow.conf and
-# panel/.env - that's a plain .env next to this file, the one form of env
-# loading every Compose version has supported since v1. Relying on each
-# include:'d file auto-discovering a .env in its own subdirectory turned out
-# to be version-dependent and unreliable running from this root directory,
-# so this repo doesn't depend on that.
+# They share one Docker volume (mailserver-config, defined at the bottom):
+# the panel writes domain/mailbox/DKIM config directly into it, and
+# docker-mailserver's own background process (its "change-detector")
+# notices the edits and reloads Postfix/Dovecot/Rspamd automatically -
+# usually within a couple of seconds. That's the entire integration
+# between the two containers: no REST API, no `docker exec`, no Docker
+# socket access granted to the panel. See panel/webmail/mailadmin.py for
+# the code that writes into this shared volume.
+#
+# Every ${VARIABLE} below is read from the .env file that setup.sh
+# generates (see .env.example for what each one means and its default).
 name: novella-mail
 
-include:
-  - path: mailcow-dockerized/docker-compose.yml
-  - path: panel/docker-compose.yml
+services:
+  mailserver:
+    image: ghcr.io/docker-mailserver/docker-mailserver:latest
+    # `:?` here means "fail with a clear error if MAIL_DOMAIN isn't set",
+    # rather than silently starting with an empty/wrong hostname - this is
+    # the mail server's own identity (its FQDN), used for its TLS
+    # certificate and in its SMTP greeting.
+    hostname: ${MAIL_DOMAIN:?set MAIL_DOMAIN in .env}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ENABLE_POP3=1
+      # Rspamd handles DKIM signing (ENABLE_OPENDKIM=0) instead of the
+      # older OpenDKIM daemon, specifically because Rspamd's DKIM keys are
+      # picked up live by the change-detector, while OpenDKIM only loads
+      # keys once at container startup - it would need a restart every
+      # time a domain's DKIM key is added, which defeats the point of
+      # managing everything through a shared volume with no privileged
+      # access. See panel/webmail/mailadmin.py's module docstring for more.
+      - ENABLE_RSPAMD=1
+      - ENABLE_OPENDKIM=0
+      - ENABLE_OPENDMARC=1
+      - ENABLE_POLICYD_SPF=1
+      - ENABLE_QUOTAS=1
+      # Tells docker-mailserver to manage accounts from flat files in the
+      # shared config volume (postfix-accounts.cf etc.) rather than a
+      # database or LDAP - this is what makes the whole "panel writes a
+      # file, mail server picks it up" approach possible.
+      - ACCOUNT_PROVISIONER=FILE
+      # self-signed by default so mail works immediately with zero
+      # certificate setup - see docs/SETUP.md section 7 for how to switch
+      # to a real certificate (mail clients will otherwise show an
+      # "untrusted certificate" warning on first connect).
+      - SSL_TYPE=${SSL_TYPE:-self-signed}
+      # Do not relax this - it's what stops this server from being usable
+      # as an open relay by anything that can merely reach these ports,
+      # without a valid account login.
+      - PERMIT_DOCKER=none
+      - TZ=${TZ:-UTC}
+    # These are the actual mail protocol ports and need to stay reachable
+    # from the public internet for the mail server to work at all - unlike
+    # the panel below, there's no reverse proxy in front of raw SMTP/IMAP.
+    ports:
+      - "25:25"     # SMTP (inbound mail from other mail servers)
+      - "465:465"   # SMTPS (authenticated submission, implicit TLS)
+      - "587:587"   # Submission (authenticated submission, STARTTLS)
+      - "143:143"   # IMAP (STARTTLS)
+      - "993:993"   # IMAPS (implicit TLS)
+      - "110:110"   # POP3 (STARTTLS, optional protocol - most people only need IMAP)
+      - "995:995"   # POP3S (implicit TLS)
+    volumes:
+      # Actual mail storage, Postfix/Dovecot/Rspamd's own state, and logs -
+      # each its own named volume so `docker volume ls` / backups can
+      # address them individually. None of this is touched by updating the
+      # image (see update.sh).
+      - mail-data:/var/mail/
+      - mail-state:/var/mail-state/
+      - mail-logs:/var/log/mail/
+      # The shared config volume - see the big comment at the top of this
+      # file. Mounted here at the exact path (/tmp/docker-mailserver/)
+      # docker-mailserver itself expects to find its config files.
+      - mailserver-config:/tmp/docker-mailserver/
+      - /etc/localtime:/etc/localtime:ro
+    stop_grace_period: 1m
+
+  panel:
+    build: panel
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Where *this* container sees the shared config volume (matches the
+      # MAIL_CONFIG_DIR default in panel/novella/settings.py) - deliberately
+      # not the same path as the mailserver service's mount point above,
+      # since that path (/tmp/docker-mailserver/) is meaningful specifically
+      # to docker-mailserver's own internals, not to the panel.
+      - MAIL_CONFIG_DIR=/mailserver-config
+    depends_on:
+      - mailserver
+    volumes:
+      - panel_data:/app/data
+      - mailserver-config:/mailserver-config
+    # 127.0.0.1 only, deliberately: this is not meant to be reachable
+    # directly from the internet. Put your own reverse proxy (nginx/Caddy/
+    # Traefik/whatever) in front of this port for public HTTPS access -
+    # see docs/SETUP.md section 5 and the reverse-proxy notes in
+    # panel/novella/settings.py.
+    ports:
+      - "127.0.0.1:${PANEL_PORT:-3010}:8000"
+
+volumes:
+  mail-data:
+  mail-state:
+  mail-logs:
+  mailserver-config:
+  panel_data:

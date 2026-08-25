@@ -1,11 +1,5 @@
-# mailcow-dockerized is vendored as a git submodule (see .gitmodules) - it's
-# a nested repo with its own .gitignore, so nothing from inside it needs
-# listing here; this repo only tracks the pinned commit (the gitlink).
-
 # Never commit secrets
 *.env
-mailcow.conf
-mailcow.conf_backup
 .env
 
 # Django panel runtime artifacts

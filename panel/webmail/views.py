@@ -1,3 +1,19 @@
+"""
+All the panel's views (Django's term for "the function that handles a URL
+and returns a response" - see urls.py for which URL maps to which of these).
+
+Two halves to this file:
+  - Mail views (login/logout/inbox/compose/attachments): every logged-in
+    user can use these for their own mailbox. They work by opening a fresh
+    IMAP connection per request via webmail.mail (see that module's own
+    docstring for why) using the email+password stashed in the session at
+    login time.
+  - Domain admin views (bottom, "Domain admin" section): gated behind
+    @admin_required (see decorators.py) - only mailbox emails listed in
+    ADMIN_EMAILS can reach these. They call webmail.mailadmin, which edits
+    docker-mailserver's config files directly rather than making any
+    network call.
+"""
 import math
 from urllib.parse import urlencode
 
@@ -8,12 +24,21 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
-from . import crypto, mail, mailcow_api
+from . import crypto, mail, mailadmin
 from .decorators import admin_required, mail_login_required
 from .forms import AddDomainForm, AddMailboxForm, ComposeForm, LoginForm
 
 
 def login_view(request):
+    """
+    Log in with a real mailbox email + password.
+
+    There's no local user database - "is this correct" is answered by
+    actually attempting an IMAP login (get_imap_connection). On success we
+    keep the email in the session in plain text and the password encrypted
+    (see crypto.py) so later requests can re-authenticate to IMAP/SMTP
+    without asking the user to type their password on every page.
+    """
     if request.session.get("mail_email"):
         return redirect("webmail:mail")
 
@@ -30,18 +55,20 @@ def login_view(request):
         else:
             request.session["mail_email"] = email_addr
             request.session["mail_password_enc"] = crypto.encrypt(password)
-            request.session.set_expiry(0)
+            request.session.set_expiry(0)  # expire when the browser closes
             return redirect("webmail:mail")
 
     return render(request, "webmail/login.html", {"form": form, "error": error})
 
 
 def logout_view(request):
+    """Clear the session (email + encrypted password) and send back to login."""
     request.session.flush()
     return redirect("webmail:login")
 
 
 def _get_session_creds(request):
+    """Read back (email, password) from the session, decrypting the password."""
     email_addr = request.session.get("mail_email")
     enc = request.session.get("mail_password_enc")
     password = crypto.decrypt(enc) if enc else None
@@ -49,7 +76,15 @@ def _get_session_creds(request):
 
 
 def _connect_or_bail(request):
-    """Returns (server, None) on success, or (None, redirect_response) on failure."""
+    """
+    Shared "get me a live IMAP connection or send the user back to login"
+    helper used by every mail view below. If the stored credentials are
+    missing or the mail server rejects them (e.g. the password was changed
+    elsewhere since login), the session is flushed and the caller should
+    immediately return the redirect it gets back.
+
+    Returns (server, None) on success, or (None, redirect_response) on failure.
+    """
     email_addr, password = _get_session_creds(request)
     if not email_addr or not password:
         return None, redirect("webmail:login")
@@ -63,6 +98,7 @@ def _connect_or_bail(request):
 
 
 def _safe_int(value, default):
+    """int(value), or `default` if value is missing/not a valid integer."""
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -71,6 +107,15 @@ def _safe_int(value, default):
 
 @mail_login_required
 def mail_view(request):
+    """
+    The main inbox page: folder list + message list + (optionally) one
+    open message, all in a single response. Which folder/page/message to
+    show comes from query params (?folder=...&page=...&uid=...) rather
+    than separate URLs, which keeps every "click a folder" / "click a
+    message" / "next page" link a plain GET to this same view - see
+    templates/webmail/mail.html for how the three panes lay out
+    responsively from this one context.
+    """
     server, bail = _connect_or_bail(request)
     if bail:
         return bail
@@ -90,6 +135,9 @@ def mail_view(request):
     except mail.MailError as exc:
         messages.error(request, str(exc))
     finally:
+        # Always log out of the IMAP connection before this view returns -
+        # there's no long-lived connection pool, each request opens and
+        # closes its own (see webmail/mail.py's module docstring).
         try:
             server.logout()
         except Exception:  # noqa: BLE001
@@ -113,6 +161,14 @@ def mail_view(request):
 @mail_login_required
 @require_http_methods(["POST"])
 def message_action(request):
+    """
+    Handle the small per-message actions (delete/mark read/unread/star) -
+    each one is its own tiny POST form in the message list/detail
+    templates. Deleting moves to Trash if a Trash folder can be found,
+    otherwise deletes permanently. Redirects back to the same folder/page
+    (and message, unless it was just deleted) rather than rendering
+    directly, so a page refresh after the action doesn't re-submit the form.
+    """
     folder = request.POST.get("folder") or "INBOX"
     uid = request.POST.get("uid")
     action = request.POST.get("action")
@@ -160,6 +216,18 @@ def message_action(request):
 
 @mail_login_required
 def compose_view(request):
+    """
+    Compose a new message, or a reply/reply-all/forward of an existing one.
+
+    GET with ?reply=<uid>&folder=<folder>&mode=reply|reply-all|forward
+    pre-fills the form (quoting the original) - used by the Reply/Reply
+    all/Forward links on the message detail page. Plain GET with no
+    `reply` param is a blank compose form.
+
+    POST sends the message, then appends a copy to the Sent folder - see
+    webmail.mail.send_message and append_to_sent for why those are two
+    separate steps (SMTP has no concept of "sent mail" on its own).
+    """
     email_addr, password = _get_session_creds(request)
     initial = {}
 
@@ -185,6 +253,11 @@ def compose_view(request):
             except mail.MailError as exc:
                 messages.error(request, str(exc))
             else:
+                # Sending succeeded - now open a *second* connection just to
+                # save a copy into Sent. Doing this even if it fails
+                # wouldn't un-send the message, so failures here are
+                # swallowed inside append_to_sent rather than shown to the
+                # user as a "could not send" error.
                 server, _bail = _connect_or_bail(request)
                 if server:
                     try:
@@ -203,6 +276,9 @@ def compose_view(request):
         mode = request.GET.get("mode", "reply")
 
         if reply_uid is not None and reply_folder:
+            # Fetch the original message read-only (mark_seen=False) just
+            # to quote it - opening the compose form for a reply shouldn't
+            # have the side effect of marking the original message read.
             server, _bail = _connect_or_bail(request)
             original = None
             if server:
@@ -243,6 +319,7 @@ def compose_view(request):
 
 @mail_login_required
 def attachment_download(request):
+    """Stream one attachment's bytes back with a Content-Disposition header, so the browser downloads/saves it."""
     folder = request.GET.get("folder")
     uid = _safe_int(request.GET.get("uid"), None)
     index = _safe_int(request.GET.get("index"), None)
@@ -264,104 +341,87 @@ def attachment_download(request):
         raise Http404("Attachment not found.")
 
     response = HttpResponse(att["content"], content_type=att["content_type"] or "application/octet-stream")
+    # Strip quotes from the filename so it can't break out of the
+    # Content-Disposition header's own quoted-string syntax.
     filename = att["filename"].replace('"', "")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
 
-# --- Domain admin (self-service onboarding via mailcow's API) -------------
+# --- Domain admin (file-based - see webmail.mailadmin) -------------------
+# Everything below is gated by @admin_required: only mailbox emails listed
+# in the ADMIN_EMAILS setting can reach these views. Unlike the mail views
+# above, these don't open an IMAP connection at all - webmail.mailadmin
+# manages docker-mailserver purely by reading/writing its config files on
+# a volume shared between the two containers.
 
 @admin_required
 def domain_list(request):
+    """List known domains, and handle the "add a domain" form."""
     form = AddDomainForm()
     if request.method == "POST":
         form = AddDomainForm(request.POST)
         if form.is_valid():
-            domain = form.cleaned_data["domain"]
-            try:
-                mailcow_api.add_domain(domain, form.cleaned_data["description"])
-            except mailcow_api.MailcowAPIError as exc:
-                messages.error(request, f"Could not add domain: {exc}")
-            else:
-                messages.success(
-                    request,
-                    f"Domain {domain} added. Point its MX record at "
-                    f"{settings.MAILCOW_HOSTNAME or 'this server'} to start receiving mail for it "
-                    "- see the domain page for the full DNS checklist.",
-                )
-                return redirect("webmail:admin_domain_detail", domain=domain)
+            # No create step - docker-mailserver derives domains from
+            # whatever addresses exist. Just go to that domain's page.
+            return redirect("webmail:admin_domain_detail", domain=form.cleaned_data["domain"])
 
-    try:
-        domains = mailcow_api.list_domains()
-    except mailcow_api.MailcowAPIError as exc:
-        messages.error(request, str(exc))
-        domains = []
-
-    return render(request, "webmail/admin_domains.html", {"domains": domains, "form": form})
+    return render(request, "webmail/admin_domains.html", {"domains": mailadmin.list_domains(), "form": form})
 
 
 @admin_required
 @require_http_methods(["POST"])
 def domain_action(request):
+    """Currently just handles domain deletion (its own mailboxes + DKIM key registration go with it)."""
     domain = request.POST.get("domain")
     action = request.POST.get("action")
     if action == "delete" and domain:
-        try:
-            mailcow_api.delete_domain(domain)
-            messages.success(request, f"Domain {domain} deleted.")
-        except mailcow_api.MailcowAPIError as exc:
-            messages.error(request, f"Could not delete domain: {exc}")
+        mailadmin.delete_domain(domain)
+        messages.success(request, f"Domain {domain} deleted.")
     return redirect("webmail:admin_domains")
 
 
 @admin_required
 def domain_detail(request, domain):
+    """
+    One domain's admin page: DNS checklist, DKIM key generation, mailbox
+    list + add-mailbox form. `domain` doesn't have to already "exist" in
+    any registered sense (there's no such thing - see AddDomainForm) - this
+    page works fine for a domain with zero mailboxes and no DKIM key yet,
+    that's exactly the state right after typing a brand new domain in.
+    """
     mailbox_form = AddMailboxForm()
 
     if request.method == "POST" and request.POST.get("form_name") == "mailbox":
         mailbox_form = AddMailboxForm(request.POST)
         if mailbox_form.is_valid():
             try:
-                mailcow_api.add_mailbox(
+                mailadmin.add_mailbox(
                     domain,
                     mailbox_form.cleaned_data["local_part"],
                     mailbox_form.cleaned_data["password"],
-                    mailbox_form.cleaned_data["name"],
                 )
-            except mailcow_api.MailcowAPIError as exc:
+            except mailadmin.MailAdminError as exc:
                 messages.error(request, f"Could not add mailbox: {exc}")
             else:
-                messages.success(request, "Mailbox created.")
+                messages.success(request, "Mailbox created. It's live within a few seconds.")
                 return redirect("webmail:admin_domain_detail", domain=domain)
 
     elif request.method == "POST" and request.POST.get("form_name") == "dkim":
         try:
-            mailcow_api.generate_dkim(domain)
+            mailadmin.generate_dkim(domain)
             messages.success(request, "DKIM key generated - add the DNS record below.")
-        except mailcow_api.MailcowAPIError as exc:
+        except mailadmin.MailAdminError as exc:
             messages.error(request, f"Could not generate DKIM key: {exc}")
         return redirect("webmail:admin_domain_detail", domain=domain)
 
-    info, mailboxes = None, []
-    try:
-        info = mailcow_api.get_domain(domain)
-        mailboxes = mailcow_api.list_mailboxes(domain)
-    except mailcow_api.MailcowAPIError as exc:
-        messages.error(request, str(exc))
-
-    dkim = None
-    try:
-        dkim = mailcow_api.get_dkim(domain)
-    except mailcow_api.MailcowAPIError:
-        dkim = None
-
     context = {
         "domain": domain,
-        "info": info,
-        "mailboxes": mailboxes,
-        "dkim": dkim,
+        "info": mailadmin.get_domain(domain),
+        "mailboxes": mailadmin.list_mailboxes(domain),
+        "dkim": mailadmin.get_dkim(domain),
         "mailbox_form": mailbox_form,
-        "mailcow_hostname": settings.MAILCOW_HOSTNAME,
+        "mail_domain": settings.MAIL_DOMAIN,
     }
     return render(request, "webmail/admin_domain_detail.html", context)
 
@@ -369,13 +429,11 @@ def domain_detail(request, domain):
 @admin_required
 @require_http_methods(["POST"])
 def mailbox_action(request):
+    """Currently just handles mailbox deletion."""
     domain = request.POST.get("domain")
     username = request.POST.get("username")
     action = request.POST.get("action")
     if action == "delete" and username:
-        try:
-            mailcow_api.delete_mailbox(username)
-            messages.success(request, f"Mailbox {username} deleted.")
-        except mailcow_api.MailcowAPIError as exc:
-            messages.error(request, f"Could not delete mailbox: {exc}")
+        mailadmin.delete_mailbox(username)
+        messages.success(request, f"Mailbox {username} deleted.")
     return redirect("webmail:admin_domain_detail", domain=domain)
