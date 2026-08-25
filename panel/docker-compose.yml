@@ -1,3 +1,11 @@
+# Not meant to be run standalone (`docker compose -f panel/docker-compose.yml
+# up` on its own would fail: mailcow-network is intentionally NOT declared
+# here). Always bring this up via the root docker-compose.yml's `include:`,
+# which merges this with mailcow-dockerized/docker-compose.yml into one
+# project - that file is the sole owner of the mailcow-network definition
+# (driver, IPAM, etc.); redeclaring it here too, even as an empty override,
+# makes some Compose versions reject the merge as "conflicting network".
+# Referencing it in the service below is enough once merged.
 services:
   panel:
     build: .
@@ -14,15 +22,3 @@ services:
 
 volumes:
   panel_data:
-
-networks:
-  default:
-  # mailcow-network is really defined by mailcow-dockerized/docker-compose.yml
-  # (driver, IPAM, etc.) - this empty entry just lets this file validate and
-  # attach to it on its own. When brought up together via the root
-  # docker-compose.yml's `include:`, both files merge into one project and
-  # this resolves to that same real network, so the panel can reach
-  # mailcow's admin API container-to-container (see webmail/mailcow_api.py).
-  # Standing this file up on its own (without the root include) will instead
-  # create a fresh, empty "mailcow-network" with no mailcow containers on it.
-  mailcow-network: {}
