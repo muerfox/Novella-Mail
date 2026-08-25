@@ -142,7 +142,7 @@ docker compose up -d
 
 ## 4. Firewall
 
-Open only the mail ports publicly. Do **not** open 3006, 3007, or 3008.
+Open only the mail ports publicly. Do **not** open 3006, 3008, or 3009.
 
 ```
 sudo ufw allow 25/tcp    # SMTP (inbound mail)
@@ -161,16 +161,16 @@ Both panels only listen on localhost. Reach them one of two ways:
 **SSH tunnel (simplest, no extra setup):**
 
 ```
-ssh -L 3007:127.0.0.1:3007 -L 3006:127.0.0.1:3006 you@your-server
+ssh -L 3009:127.0.0.1:3009 -L 3006:127.0.0.1:3006 you@your-server
 ```
 
-then open `http://127.0.0.1:3007` (Novella panel, day-to-day use) or
+then open `http://127.0.0.1:3009` (Novella panel, day-to-day use) or
 `http://127.0.0.1:3006` (mailcow admin UI, for DKIM/quotas/spam settings) in
 your local browser.
 
 **Reverse proxy with your own TLS** (if you want a public
 `https://mail.example.com` URL with a real cert): put nginx/Caddy/Traefik on
-the host in front of `127.0.0.1:3007`, terminating TLS there. This repo
+the host in front of `127.0.0.1:3009`, terminating TLS there. This repo
 doesn't set that up for you since it depends on how you want auth/TLS
 handled — ask if you want a Caddy config added.
 
@@ -188,7 +188,7 @@ panel.
   at least one mailbox — that mailbox's email + password is what you log
   into the Novella panel with, there's no separate account system there.
 
-**Novella panel** (`http://127.0.0.1:3007`):
+**Novella panel** (`http://127.0.0.1:3009`):
 - Log in with the email + password of the mailbox you just created. The
   panel authenticates by trying an IMAP login with whatever you type —
   there's no separate panel account to set up.

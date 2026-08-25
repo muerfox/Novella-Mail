@@ -25,7 +25,7 @@ Port layout:
 - **Mail ports are public**: SMTP (25), SMTPS (465), Submission (587), IMAP
   (143), IMAPS (993), POP3 (110/995), Sieve (4190) bind on all interfaces, as
   a mail server needs to.
-- **Both panels are private**: the Novella panel on `127.0.0.1:3007` and the
+- **Both panels are private**: the Novella panel on `127.0.0.1:3009` and the
   mailcow admin UI on `127.0.0.1:3006`, reachable via SSH tunnel or your own
   reverse proxy — never exposed directly to the internet.
 

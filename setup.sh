@@ -7,7 +7,7 @@
 #     a second localhost-only port (3006) - domains/DKIM/quotas/spam
 #     settings live there until the custom panel covers them too.
 #  2. Generates panel/.env for the custom Django+HTMX panel, which becomes
-#     the primary panel on 127.0.0.1:3007.
+#     the primary panel on 127.0.0.1:3009.
 #
 # Everything then comes up with one command from the repo root:
 #   docker compose up -d
@@ -21,7 +21,7 @@ PANEL_DIR="${ROOT_DIR}/panel"
 
 MAILCOW_UI_PORT="${MAILCOW_UI_PORT:-3006}"
 MAILCOW_UI_HTTPS_PORT="${MAILCOW_UI_HTTPS_PORT:-3008}"
-PANEL_PORT="${PANEL_PORT:-3007}"
+PANEL_PORT="${PANEL_PORT:-3009}"
 PANEL_BIND="${PANEL_BIND:-127.0.0.1}"
 # mailcow's own default (172.22.1.0/24) sits inside the 172.16.0.0/12 block
 # most Docker hosts auto-allocate project networks from, so it collides
@@ -95,6 +95,7 @@ if [ ! -f .env ]; then
     -e "s/^MAILCOW_API_BASE_URL=.*/MAILCOW_API_BASE_URL=http:\/\/nginx:${MAILCOW_UI_PORT}/" \
     -e "s/^MAILCOW_API_KEY=.*/MAILCOW_API_KEY=${MAILCOW_API_KEY}/" \
     -e "s/^MAILCOW_HOSTNAME=.*/MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME}/" \
+    -e "s/^PANEL_PORT=.*/PANEL_PORT=${PANEL_PORT}/" \
     .env
   echo "    Wrote panel/.env (MAIL_TLS_INSECURE=true because SKIP_LETS_ENCRYPT=y gives a"
   echo "    self-signed cert - flip it to false once you've set up a trusted cert, see"

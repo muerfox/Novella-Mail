@@ -15,7 +15,7 @@ services:
     volumes:
       - panel_data:/app/data
     ports:
-      - "127.0.0.1:${PANEL_PORT:-3007}:8000"
+      - "127.0.0.1:${PANEL_PORT:-3009}:8000"
     networks:
       - default
       - mailcow-network
