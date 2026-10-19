@@ -7,3 +7,9 @@
     <li class="muted">No folders found.</li>
   {% endfor %}
 </ul>
+{% if quota %}
+  <div class="quota-box">
+    <div class="usage-bar{% if quota.percent >= 90 %} usage-high{% endif %}"><span style="width: {{ quota.percent }}%"></span></div>
+    <p class="muted">{{ quota.used|filesizeformat }} of {{ quota.limit|filesizeformat }} used</p>
+  </div>
+{% endif %}

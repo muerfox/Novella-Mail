@@ -72,7 +72,7 @@ button { font: inherit; }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
 .icon-btn.danger:hover { color: var(--danger); }
 
-input[type="text"], input[type="email"], input[type="password"], textarea, select {
+input[type="text"], input[type="email"], input[type="password"], input[type="number"], textarea, select {
   width: 100%;
   padding: 0.55rem 0.7rem;
   margin: 0.25rem 0 0.75rem;
@@ -272,6 +272,17 @@ label { font-weight: 600; font-size: 0.9rem; }
 .tag-active { color: #2fa860; font-weight: 600; }
 .mailbox-input-row { display: flex; align-items: center; gap: 0.5rem; }
 .mailbox-input-row input { flex: 1; margin: 0; }
+.admin-wide { max-width: 1000px; }
+.tag-suspended { color: var(--danger); font-weight: 600; }
+.admin-card h2 .tag-active, .admin-card h2 .tag-suspended { font-size: 0.8rem; margin-left: 0.4rem; }
+.inline-form { display: inline-flex; align-items: center; gap: 0.35rem; }
+.inline-form input, .inline-form select { margin: 0; width: auto; }
+.inline-form .size-input { width: 5rem; }
+.usage-bar { height: 6px; min-width: 6rem; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.usage-bar > span { display: block; height: 100%; background: var(--accent); }
+.usage-bar.usage-high > span { background: var(--danger); }
+.quota-box { padding: 0.75rem 1rem; border-top: 1px solid var(--border); font-size: 0.8rem; }
+.quota-box p { margin: 0.35rem 0 0; }
 
 /* ============ Desktop: three-pane layout ============ */
 @media (min-width: 900px) {

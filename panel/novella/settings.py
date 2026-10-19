@@ -172,6 +172,9 @@ ADMIN_EMAILS = [e.lower() for e in _env_list("ADMIN_EMAILS", "")]
 # reloads Postfix/Dovecot/Rspamd on its own - no API calls, no `docker
 # exec`, no elevated Docker permissions needed for any of this.
 MAIL_CONFIG_DIR = os.environ.get("MAIL_CONFIG_DIR", "/mailserver-config")
+# docker-mailserver's mail-data volume, mounted read-only - only used to
+# show approximate per-mailbox storage usage in the admin pages.
+MAIL_DATA_DIR = os.environ.get("MAIL_DATA_DIR", "/mail-data")
 # The mail server's own hostname (e.g. mail.example.com) - shown in the
 # panel's DNS-record checklist for each domain you add.
 MAIL_DOMAIN = os.environ.get("MAIL_DOMAIN", "")

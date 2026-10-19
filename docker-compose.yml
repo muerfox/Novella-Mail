@@ -98,11 +98,15 @@ services:
       # since that path (/tmp/docker-mailserver/) is meaningful specifically
       # to docker-mailserver's own internals, not to the panel.
       - MAIL_CONFIG_DIR=/mailserver-config
+      - MAIL_DATA_DIR=/mail-data
     depends_on:
       - mailserver
     volumes:
       - panel_data:/app/data
       - mailserver-config:/mailserver-config
+      # Read-only: the panel only measures mailbox sizes for the admin
+      # pages' usage column, it never touches delivered mail.
+      - mail-data:/mail-data:ro
     # 127.0.0.1 only, deliberately: this is not meant to be reachable
     # directly from the internet. Put your own reverse proxy (nginx/Caddy/
     # Traefik/whatever) in front of this port for public HTTPS access -

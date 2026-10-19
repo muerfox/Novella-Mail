@@ -212,11 +212,35 @@ actual mail data under the `mail-data` volume or a generated DKIM private
 key file, just the account/alias/signing-config entries - safe to leave;
 ask if you want a "purge everything" option added.)
 
-## 10. What the panel can and can't do yet
+## 10. Clients, quotas and suspension
+
+**Clients** (top bar → Clients) are the customers you host mail for. Each
+client groups one or more domains and has three limits you set and can
+change anytime: max domains, max mailboxes, and total storage. The panel
+refuses any change that would go over a limit - adding a domain or
+mailbox, or raising a quota. Clients don't get admin access; they only log
+into webmail with their mailbox, which shows a storage bar under the
+folder list and a Password link to change their own password. Domains
+not assigned to a client have no limits.
+
+- **Quotas** - set per mailbox when creating it, and change it later from
+  the domain's mailbox table (`500M`, `3G`, `1T`). A client's quotas
+  together can't exceed its total storage.
+- **Usage** - the mailbox table and client pages show approximate disk
+  use, read from the `mail-data` volume (mounted read-only into the panel).
+- **Suspension** - suspend a single mailbox from its domain page, or a
+  whole client from its page. Suspended mailboxes can't log in to webmail,
+  IMAP/POP3 or send over SMTP; incoming mail is still accepted. Admin
+  mailboxes (`ADMIN_EMAILS`) are never suspended.
+
+Clients and suspensions are stored in `novella-clients.json` in the
+`mailserver-config` volume, next to docker-mailserver's own files.
+
+## 11. What the panel can and can't do yet
 
 Covered: read/search/star/mark read/delete/reply/forward/compose with
-attachments, and domain + mailbox + DKIM administration (section 9). Not
-yet covered: per-mailbox quota tuning from the UI (mailboxes get a flat 3G
-default - edit `dovecot-quotas.cf` directly in the `mailserver-config`
-volume to change it), aliases, spam-filter tuning. Say the word if you want
-any of those added.
+attachments, mailbox owners changing their own password (Password link in
+the top bar), domain + mailbox + DKIM administration (section 9), and
+clients with limits, quotas and suspension (section 10). Not yet covered:
+aliases/forwarders, catch-all addresses, admin-forced password resets,
+spam-filter tuning. Say the word if you want any of those added.

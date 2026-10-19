@@ -1,0 +1,109 @@
+{% extends "webmail/base.html" %}
+{% block title %}{{ client.name }} — Novella Mail{% endblock %}
+{% block body %}
+<div class="app-shell compose-shell">
+  <header class="topbar">
+    <a href="{% url 'webmail:admin_clients' %}" class="back-link">‹ Clients</a>
+    <div class="brand">{{ client.name }}</div>
+    <div class="topbar-user">
+      <a href="{% url 'webmail:admin_domains' %}">Domains</a>
+      <span class="user-email">{{ mail_email }}</span>
+      <a href="{% url 'webmail:logout' %}">Sign out</a>
+    </div>
+  </header>
+
+  {% if messages %}
+    <div class="flash">
+      {% for message in messages %}<p class="alert alert-{{ message.tags }}">{{ message }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  <main class="compose-main">
+    <section class="admin-card">
+      <h2>
+        Overview
+        {% if client.suspended %}<span class="tag-suspended">suspended</span>{% else %}<span class="tag-active">active</span>{% endif %}
+      </h2>
+      <div class="table-scroll">
+        <table class="admin-table">
+          <tbody>
+            <tr><td>Domains</td><td>{{ client.domain_count }} of {{ client.max_domains }}</td></tr>
+            <tr><td>Mailboxes</td><td>{{ client.mailbox_count }} of {{ client.max_mailboxes }}</td></tr>
+            <tr><td>Storage allocated</td><td>{{ client.allocated_bytes|filesizeformat }} of {{ client.max_storage_bytes|filesizeformat }}</td></tr>
+            <tr><td>Storage used</td><td>{% if client.used_bytes is None %}<span class="muted">unknown</span>{% else %}{{ client.used_bytes|filesizeformat }}{% endif %}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="compose-actions">
+        {% if client.suspended %}
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="form_name" value="unsuspend">
+            <button type="submit" class="btn">Unsuspend client</button>
+          </form>
+        {% else %}
+          <form method="post" hx-confirm="Suspend {{ client.name }}? None of its mailboxes will be able to log in or send (incoming mail is still accepted).">
+            {% csrf_token %}
+            <input type="hidden" name="form_name" value="suspend">
+            <button type="submit" class="btn">Suspend client</button>
+          </form>
+        {% endif %}
+        <form method="post" hx-confirm="Delete {{ client.name }}? Its domains and mailboxes are kept, just no longer assigned to a client.">
+          {% csrf_token %}
+          <input type="hidden" name="form_name" value="delete">
+          <button type="submit" class="btn btn-danger">Delete client</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="admin-card">
+      <h2>Domains</h2>
+      <div class="table-scroll">
+        <table class="admin-table">
+          <thead><tr><th>Domain</th><th>Mailboxes</th><th>DKIM</th><th></th></tr></thead>
+          <tbody>
+            {% for d in domains %}
+              <tr>
+                <td><a href="{% url 'webmail:admin_domain_detail' domain=d.domain %}">{{ d.domain }}</a></td>
+                <td>{{ d.mailbox_count }}</td>
+                <td>{% if d.has_dkim %}<span class="tag-active">signed</span>{% else %}<span class="muted">not set up</span>{% endif %}</td>
+                <td>
+                  <form method="post" hx-confirm="Remove {{ d.domain }} from {{ client.name }}? Its mailboxes are kept.">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_name" value="unassign">
+                    <input type="hidden" name="domain" value="{{ d.domain }}">
+                    <button type="submit" class="icon-btn danger">Remove</button>
+                  </form>
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="4" class="muted">No domains yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <form method="post" class="compose-form">
+        {% csrf_token %}
+        <input type="hidden" name="form_name" value="assign">
+        <label for="{{ domain_form.domain.id_for_label }}">Add a domain</label>
+        <div class="mailbox-input-row">
+          {{ domain_form.domain }}
+          <button type="submit" class="btn btn-primary">Add</button>
+        </div>
+        {% for err in domain_form.domain.errors %}<p class="field-error">{{ err }}</p>{% endfor %}
+        <p class="muted">New or existing domain. Any mailboxes it already has count toward this client's limits.</p>
+      </form>
+    </section>
+
+    <section class="admin-card">
+      <h2>Limits</h2>
+      <form method="post" class="compose-form">
+        {% csrf_token %}
+        <input type="hidden" name="form_name" value="limits">
+        {% include "webmail/_client_fields.html" with form=limits_form %}
+        <button type="submit" class="btn btn-primary">Save</button>
+      </form>
+    </section>
+  </main>
+</div>
+{% endblock %}

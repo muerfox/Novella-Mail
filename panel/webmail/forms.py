@@ -18,6 +18,20 @@ _local_part_validator = RegexValidator(
     regex=r"^[A-Za-z0-9][A-Za-z0-9._+-]*$",
     message="Use letters, numbers, and . _ + - only.",
 )
+# Matches mailadmin.QUOTA_RE (case-insensitive here, upper-cased on clean).
+_size_validator = RegexValidator(
+    regex=r"^[1-9][0-9]*[MGTmgt]$",
+    message="Use a size like 500M, 3G or 1T.",
+)
+
+
+def _size_field(label, initial):
+    return forms.CharField(
+        label=label,
+        initial=initial,
+        validators=[_size_validator],
+        widget=forms.TextInput(attrs={"placeholder": initial}),
+    )
 
 
 class LoginForm(forms.Form):
@@ -68,9 +82,13 @@ class AddMailboxForm(forms.Form):
     )
     password = forms.CharField(widget=forms.PasswordInput())
     password2 = forms.CharField(label="Confirm password", widget=forms.PasswordInput())
+    quota = _size_field("Storage quota", "3G")
 
     def clean_local_part(self):
         return self.cleaned_data["local_part"].strip().lower()
+
+    def clean_quota(self):
+        return self.cleaned_data["quota"].strip().upper()
 
     def clean(self):
         # Cross-field validation (comparing two fields to each other) has
@@ -83,4 +101,48 @@ class AddMailboxForm(forms.Form):
             self.add_error("password2", "Passwords don't match.")
         if pw and len(pw) < 8:
             self.add_error("password", "Use at least 8 characters.")
+        return cleaned
+
+
+class ClientForm(forms.Form):
+    """Create a client, or edit its name and limits (see mailadmin's client functions)."""
+    name = forms.CharField(max_length=100, widget=forms.TextInput(attrs={"placeholder": "Acme Ltd"}))
+    max_domains = forms.IntegerField(label="Max domains", min_value=1, initial=1)
+    max_mailboxes = forms.IntegerField(label="Max mailboxes", min_value=1, initial=5)
+    max_storage = _size_field("Total storage", "10G")
+
+    def clean_max_storage(self):
+        return self.cleaned_data["max_storage"].strip().upper()
+
+
+class QuotaForm(forms.Form):
+    """The inline "change quota" field in a domain's mailbox table."""
+    quota = _size_field("Quota", "3G")
+
+    def clean_quota(self):
+        return self.cleaned_data["quota"].strip().upper()
+
+
+class ChangePasswordForm(forms.Form):
+    """Logged-in mailbox owners change their own password (see change_password_view)."""
+    current_password = forms.CharField(
+        label="Current password",
+        widget=forms.PasswordInput(attrs={"autocomplete": "current-password", "autofocus": True}),
+    )
+    new_password = forms.CharField(
+        label="New password",
+        widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
+    )
+    new_password2 = forms.CharField(
+        label="Confirm new password",
+        widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        pw, pw2 = cleaned.get("new_password"), cleaned.get("new_password2")
+        if pw and pw2 and pw != pw2:
+            self.add_error("new_password2", "Passwords don't match.")
+        if pw and len(pw) < 8:
+            self.add_error("new_password", "Use at least 8 characters.")
         return cleaned

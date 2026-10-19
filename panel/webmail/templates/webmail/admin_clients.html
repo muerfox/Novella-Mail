@@ -1,0 +1,61 @@
+{% extends "webmail/base.html" %}
+{% block title %}Clients — Novella Mail{% endblock %}
+{% block body %}
+<div class="app-shell compose-shell">
+  <header class="topbar">
+    <a href="{% url 'webmail:mail' %}" class="back-link">‹ Back to mail</a>
+    <div class="brand">Clients</div>
+    <div class="topbar-user">
+      <a href="{% url 'webmail:admin_domains' %}">Domains</a>
+      <span class="user-email">{{ mail_email }}</span>
+      <a href="{% url 'webmail:logout' %}">Sign out</a>
+    </div>
+  </header>
+
+  {% if messages %}
+    <div class="flash">
+      {% for message in messages %}<p class="alert alert-{{ message.tags }}">{{ message }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  <main class="compose-main admin-wide">
+    <section class="admin-card">
+      <h2>Clients</h2>
+      <div class="table-scroll">
+        <table class="admin-table">
+          <thead>
+            <tr><th>Client</th><th>Status</th><th>Domains</th><th>Mailboxes</th><th>Storage allocated</th><th>Used</th></tr>
+          </thead>
+          <tbody>
+            {% for c in clients %}
+              <tr>
+                <td><a href="{% url 'webmail:admin_client_detail' slug=c.slug %}">{{ c.name }}</a></td>
+                <td>{% if c.suspended %}<span class="tag-suspended">suspended</span>{% else %}<span class="tag-active">active</span>{% endif %}</td>
+                <td>{{ c.domain_count }} / {{ c.max_domains }}</td>
+                <td>{{ c.mailbox_count }} / {{ c.max_mailboxes }}</td>
+                <td>{{ c.allocated_bytes|filesizeformat }} / {{ c.max_storage_bytes|filesizeformat }}</td>
+                <td>{% if c.used_bytes is None %}<span class="muted">—</span>{% else %}{{ c.used_bytes|filesizeformat }}{% endif %}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="6" class="muted">No clients yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="admin-card">
+      <h2>Add a client</h2>
+      <p class="muted">
+        A client is a customer you host mail for. Their domains and mailboxes
+        are limited to what you set here; you can change the limits anytime.
+      </p>
+      <form method="post" class="compose-form">
+        {% csrf_token %}
+        {% include "webmail/_client_fields.html" with form=form %}
+        <button type="submit" class="btn btn-primary">Create client</button>
+      </form>
+    </section>
+  </main>
+</div>
+{% endblock %}

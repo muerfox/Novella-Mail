@@ -21,20 +21,33 @@ docs/content/config/best-practices/dkim_dmarc_spf.md):
   which is exactly what this whole approach avoids). Rspamd's DKIM *is*
   covered by change-detection, so writing the key + signing config here is
   enough for it to take effect within a few seconds.
+
+Clients (customers you host mail for) are the panel's own bookkeeping in
+novella-clients.json - DMS has no such concept. A client groups domains and
+carries limits (domains, mailboxes, total allocated storage) that the panel
+enforces whenever a mailbox, quota, or domain assignment changes.
+Suspension is applied to DMS by prefixing the account's password hash with
+"!" in postfix-accounts.cf: the hash can then never verify, so IMAP/SMTP
+logins fail, while the account (and therefore incoming mail delivery)
+stays in place. Unsuspending strips the "!" again - no password reset.
 """
 import base64
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.conf import settings
+from django.template.defaultfilters import filesizeformat
+from django.utils.text import slugify
 from passlib.hash import sha512_crypt
 
 ACCOUNTS_FILE = "postfix-accounts.cf"
 QUOTAS_FILE = "dovecot-quotas.cf"
+CLIENTS_FILE = "novella-clients.json"
 DKIM_REGISTRY_FILE = "novella-dkim-registry.json"
 DKIM_KEY_DIR = "rspamd/dkim"
 DKIM_SIGNING_CONF = "rspamd/override.d/dkim_signing.conf"
@@ -48,6 +61,13 @@ DEFAULT_QUOTA = "3G"
 DEFAULT_SELECTOR = "mail"
 DEFAULT_KEY_SIZE = 2048
 
+# The subset of DMS's quota syntax (^([0-9]+(B|k|M|G|T)|0)$) the panel
+# accepts: no "0"/unlimited, since every quota has to count against a
+# client's finite storage limit.
+QUOTA_RE = re.compile(r"^[1-9][0-9]*[MGT]$")
+_SIZE_UNITS = {"M": 1024**2, "G": 1024**3, "T": 1024**4}
+_HASH_RE = re.compile(r"^(\{[^}]*\})?(!?)(.*)$", re.S)
+
 
 class MailAdminError(Exception):
     """Raised for admin operations that can't proceed (e.g. a duplicate mailbox/DKIM key)."""
@@ -56,6 +76,26 @@ class MailAdminError(Exception):
 def _config_dir() -> Path:
     """The shared config directory, as seen from *this* (panel) container - see MAIL_CONFIG_DIR in settings.py."""
     return Path(settings.MAIL_CONFIG_DIR)
+
+
+def _domain_of(email):
+    return email.split("@", 1)[-1]
+
+
+def parse_size(value):
+    """Bytes for a quota string like "500M", "3G" or "1T". Raises MailAdminError for anything else."""
+    value = (value or "").strip().upper()
+    if not QUOTA_RE.match(value):
+        raise MailAdminError(f"'{value}' isn't a valid size - use e.g. 500M, 3G or 1T.")
+    return int(value[:-1]) * _SIZE_UNITS[value[-1]]
+
+
+def _quota_bytes(value):
+    """Like parse_size, but None for quotas the panel didn't write itself (e.g. "0" set by hand)."""
+    try:
+        return parse_size(value)
+    except MailAdminError:
+        return None
 
 
 def _atomic_write(path: Path, content: str):
@@ -118,8 +158,288 @@ def _read_quotas():
 
 
 def _write_quotas(quotas):
-    lines = [f"{email}:{limit}" for email, limit in quotas.items()]
+    # DMS looks a mailbox's quota up with `grep -i "<email>:"` and takes the
+    # first hit, so "sales@x.com:" also matches "presales@x.com:". Any such
+    # false match is strictly longer, so shortest-first keeps the exact line
+    # ahead of it.
+    ordered = sorted(quotas.items(), key=lambda kv: (len(kv[0]), kv[0]))
+    lines = [f"{email}:{limit}" for email, limit in ordered]
     _atomic_write(_config_dir() / QUOTAS_FILE, "\n".join(lines) + ("\n" if lines else ""))
+
+
+# --- Clients + suspension (our own bookkeeping - not part of DMS's schema) --
+
+def _read_clients():
+    path = _config_dir() / CLIENTS_FILE
+    data = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError) as exc:
+            # Refuse rather than fall back to empty: the next write would
+            # otherwise wipe every client and its limits.
+            raise MailAdminError(f"{CLIENTS_FILE} is unreadable ({exc}) - fix or restore it first.") from exc
+    data.setdefault("clients", {})
+    data.setdefault("suspended_mailboxes", [])
+    return data
+
+
+def _write_clients(data):
+    _atomic_write(_config_dir() / CLIENTS_FILE, json.dumps(data, indent=2, sort_keys=True) + "\n")
+
+
+def _is_suspended_hash(hashpart):
+    return _HASH_RE.match(hashpart).group(2) == "!"
+
+
+def _with_suspension(hashpart, suspended):
+    scheme, _, rest = _HASH_RE.match(hashpart).groups()
+    return f"{scheme or ''}{'!' if suspended else ''}{rest}"
+
+
+def _apply_suspension(accounts, data):
+    """
+    Set each account's hash marker from the registry (mailbox suspended on
+    its own, or its domain's client suspended). Returns whether anything
+    changed. Admin mailboxes are never suspended - that would lock every
+    admin out of the panel.
+    """
+    suspended_domains = {
+        d for c in data["clients"].values() if c.get("suspended") for d in c["domains"]
+    }
+    suspended_mailboxes = set(data["suspended_mailboxes"])
+    changed = False
+    for acc in accounts:
+        want = (
+            acc["email"] not in settings.ADMIN_EMAILS
+            and (acc["email"] in suspended_mailboxes or _domain_of(acc["email"]) in suspended_domains)
+        )
+        new_hash = _with_suspension(acc["hash"], want)
+        if new_hash != acc["hash"]:
+            acc["hash"] = new_hash
+            changed = True
+    return changed
+
+
+def _sync_suspension(data):
+    accounts = _read_accounts()
+    if _apply_suspension(accounts, data):
+        _write_accounts(accounts)
+
+
+def is_mailbox_suspended(email):
+    email = email.strip().lower()
+    return any(a["email"] == email and _is_suspended_hash(a["hash"]) for a in _read_accounts())
+
+
+def mailbox_usage(email):
+    """
+    Approximate on-disk size of a mailbox in bytes (mail plus Dovecot's
+    index files), read from the mail-data volume mounted read-only at
+    settings.MAIL_DATA_DIR. None when that volume isn't mounted.
+    """
+    root = Path(settings.MAIL_DATA_DIR)
+    if not root.is_dir():
+        return None
+    local_part, _, domain = email.partition("@")
+    total = 0
+    for dirpath, _dirs, files in os.walk(root / domain / local_part):
+        for name in files:
+            try:
+                total += os.lstat(os.path.join(dirpath, name)).st_size
+            except OSError:
+                pass
+    return total
+
+
+def _client_summary(slug, client, accounts, quotas, with_usage):
+    emails = [a["email"] for a in accounts if _domain_of(a["email"]) in client["domains"]]
+    used = None
+    if with_usage:
+        usages = [mailbox_usage(e) for e in emails]
+        used = None if None in usages else sum(usages)
+    return {
+        **client,
+        "slug": slug,
+        "domain_count": len(client["domains"]),
+        "mailbox_count": len(emails),
+        "allocated_bytes": sum(_quota_bytes(quotas.get(e, DEFAULT_QUOTA)) or 0 for e in emails),
+        "max_storage_bytes": parse_size(client["max_storage"]),
+        "used_bytes": used,
+    }
+
+
+def _check_limits(summary, extra_domains=0, extra_mailboxes=0, extra_bytes=0):
+    """Raise MailAdminError if growing this client by the given amounts would exceed any of its limits."""
+    name = summary["name"]
+    if extra_domains > 0 and summary["domain_count"] + extra_domains > summary["max_domains"]:
+        raise MailAdminError(f"{name} is limited to {summary['max_domains']} domain(s).")
+    if extra_mailboxes > 0 and summary["mailbox_count"] + extra_mailboxes > summary["max_mailboxes"]:
+        raise MailAdminError(f"{name} is limited to {summary['max_mailboxes']} mailbox(es).")
+    if extra_bytes > 0 and summary["allocated_bytes"] + extra_bytes > summary["max_storage_bytes"]:
+        left = max(summary["max_storage_bytes"] - summary["allocated_bytes"], 0)
+        raise MailAdminError(
+            f"{name} has {summary['max_storage']} of storage in total - only {filesizeformat(left)} is left to allocate."
+        )
+
+
+def _client_for_domain(domain, data):
+    for slug, client in data["clients"].items():
+        if domain in client["domains"]:
+            return slug, client
+    return None, None
+
+
+def _require_client(data, slug):
+    client = data["clients"].get(slug)
+    if client is None:
+        raise MailAdminError("No such client.")
+    return client
+
+
+def list_clients(with_usage=True):
+    data, accounts, quotas = _read_clients(), _read_accounts(), _read_quotas()
+    return [
+        _client_summary(slug, c, accounts, quotas, with_usage)
+        for slug, c in sorted(data["clients"].items(), key=lambda kv: kv[1]["name"].lower())
+    ]
+
+
+def get_client(slug, with_usage=True):
+    """One client's settings plus current counts/allocation/usage, or None."""
+    data = _read_clients()
+    client = data["clients"].get(slug)
+    if client is None:
+        return None
+    return _client_summary(slug, client, _read_accounts(), _read_quotas(), with_usage)
+
+
+def client_for_domain(domain):
+    """Summary of the client owning `domain` (without usage), or None if it's unassigned."""
+    data = _read_clients()
+    slug, client = _client_for_domain(domain, data)
+    if client is None:
+        return None
+    return _client_summary(slug, client, _read_accounts(), _read_quotas(), False)
+
+
+def create_client(name, max_domains, max_mailboxes, max_storage):
+    """Create a client with no domains yet. Returns its slug (used in URLs)."""
+    max_storage = max_storage.strip().upper()
+    parse_size(max_storage)
+    data = _read_clients()
+    base = slugify(name) or "client"
+    slug, n = base, 2
+    while slug in data["clients"]:
+        slug, n = f"{base}-{n}", n + 1
+    data["clients"][slug] = {
+        "name": name.strip(),
+        "max_domains": max_domains,
+        "max_mailboxes": max_mailboxes,
+        "max_storage": max_storage,
+        "suspended": False,
+        "domains": [],
+        "created": datetime.now(timezone.utc).isoformat(),
+    }
+    _write_clients(data)
+    return slug
+
+
+def update_client(slug, name, max_domains, max_mailboxes, max_storage):
+    """Change a client's name/limits. Limits can't go below what the client already uses."""
+    max_storage = max_storage.strip().upper()
+    max_storage_bytes = parse_size(max_storage)
+    data = _read_clients()
+    client = _require_client(data, slug)
+    summary = _client_summary(slug, client, _read_accounts(), _read_quotas(), False)
+    if max_domains < summary["domain_count"]:
+        raise MailAdminError(f"Client already has {summary['domain_count']} domain(s) - remove some first.")
+    if max_mailboxes < summary["mailbox_count"]:
+        raise MailAdminError(f"Client already has {summary['mailbox_count']} mailbox(es) - remove some first.")
+    if max_storage_bytes < summary["allocated_bytes"]:
+        raise MailAdminError(
+            f"{filesizeformat(summary['allocated_bytes'])} is already allocated to this client's mailboxes - lower their quotas first."
+        )
+    client.update(name=name.strip(), max_domains=max_domains, max_mailboxes=max_mailboxes, max_storage=max_storage)
+    _write_clients(data)
+
+
+def delete_client(slug):
+    """Remove the client record. Its domains and mailboxes stay, just unassigned (and unsuspended)."""
+    data = _read_clients()
+    _require_client(data, slug)
+    del data["clients"][slug]
+    _write_clients(data)
+    _sync_suspension(data)
+
+
+def assign_domain(slug, domain):
+    """Put `domain` (and every mailbox it already has) under a client, within that client's limits."""
+    data = _read_clients()
+    client = _require_client(data, slug)
+    owner, owner_client = _client_for_domain(domain, data)
+    if owner == slug:
+        return
+    if owner_client is not None:
+        raise MailAdminError(f"{domain} already belongs to {owner_client['name']}.")
+    accounts, quotas = _read_accounts(), _read_quotas()
+    emails = [a["email"] for a in accounts if _domain_of(a["email"]) == domain]
+    _check_limits(
+        _client_summary(slug, client, accounts, quotas, False),
+        extra_domains=1,
+        extra_mailboxes=len(emails),
+        extra_bytes=sum(_quota_bytes(quotas.get(e, DEFAULT_QUOTA)) or 0 for e in emails),
+    )
+    client["domains"] = sorted(client["domains"] + [domain])
+    _write_clients(data)
+    _sync_suspension(data)
+
+
+def unassign_domain(slug, domain):
+    data = _read_clients()
+    client = _require_client(data, slug)
+    client["domains"] = [d for d in client["domains"] if d != domain]
+    _write_clients(data)
+    _sync_suspension(data)
+
+
+def set_client_suspended(slug, suspended):
+    """Suspend/unsuspend logins for every mailbox on every domain of this client. Mail keeps arriving."""
+    data = _read_clients()
+    _require_client(data, slug)["suspended"] = bool(suspended)
+    _write_clients(data)
+    _sync_suspension(data)
+
+
+def set_mailbox_suspended(email, suspended):
+    """Suspend/unsuspend one mailbox's logins. Mail keeps arriving while suspended."""
+    if suspended and email in settings.ADMIN_EMAILS:
+        raise MailAdminError(f"{email} is an admin account - suspending it would lock you out of the panel.")
+    data = _read_clients()
+    entries = set(data["suspended_mailboxes"])
+    if suspended:
+        entries.add(email)
+    else:
+        entries.discard(email)
+    data["suspended_mailboxes"] = sorted(entries)
+    _write_clients(data)
+    _sync_suspension(data)
+
+
+def set_mailbox_quota(email, quota):
+    """Change one mailbox's storage quota, within its client's storage limit. Takes effect within seconds."""
+    quota = quota.strip().upper()
+    new_bytes = parse_size(quota)
+    accounts, quotas = _read_accounts(), _read_quotas()
+    if not any(a["email"] == email for a in accounts):
+        raise MailAdminError(f"{email} doesn't exist.")
+    data = _read_clients()
+    slug, client = _client_for_domain(_domain_of(email), data)
+    if client is not None:
+        old_bytes = _quota_bytes(quotas.get(email, DEFAULT_QUOTA)) or 0
+        _check_limits(_client_summary(slug, client, accounts, quotas, False), extra_bytes=new_bytes - old_bytes)
+    quotas[email] = quota
+    _write_quotas(quotas)
 
 
 # --- DKIM registry (our own bookkeeping - not part of DMS's schema) -----
@@ -191,13 +511,15 @@ def _dns_txt_value(public_key) -> str:
 def list_domains():
     """
     Every domain the panel knows about, derived (not stored anywhere as
-    its own record) from two sources: the domain-part of every mailbox
-    address, and any domain that has a DKIM key generated for it even with
-    zero mailboxes yet. This is why a domain can legitimately show 0
-    mailboxes and still appear here.
+    its own record) from three sources: the domain-part of every mailbox
+    address, any domain that has a DKIM key generated for it, and any
+    domain assigned to a client - the latter two even with zero mailboxes
+    yet. This is why a domain can legitimately show 0 mailboxes and still
+    appear here. Domains owned by a client carry a "client" entry.
     """
     accounts = _read_accounts()
     registry = _read_dkim_registry()
+    clients = _read_clients()["clients"]
     domains = {}
     for acc in accounts:
         if "@" not in acc["email"]:
@@ -207,6 +529,13 @@ def list_domains():
         entry["mailbox_count"] += 1
     for domain in registry:
         domains.setdefault(domain, {"domain": domain, "mailbox_count": 0, "has_dkim": True})
+    # A client can own a domain that has no mailboxes or DKIM key yet.
+    for client in clients.values():
+        for domain in client["domains"]:
+            domains.setdefault(domain, {"domain": domain, "mailbox_count": 0, "has_dkim": False})
+    for slug, client in clients.items():
+        for domain in client["domains"]:
+            domains[domain]["client"] = {"slug": slug, "name": client["name"], "suspended": client.get("suspended", False)}
     return sorted(domains.values(), key=lambda d: d["domain"])
 
 
@@ -240,17 +569,37 @@ def delete_domain(domain):
         _write_dkim_registry(registry)
         _atomic_write(_config_dir() / DKIM_SIGNING_CONF, _render_dkim_signing_conf(registry))
 
+    data = _read_clients()
+    for client in data["clients"].values():
+        client["domains"] = [d for d in client["domains"] if d != domain]
+    data["suspended_mailboxes"] = [e for e in data["suspended_mailboxes"] if _domain_of(e) != domain]
+    _write_clients(data)
+
 
 # --- Mailboxes -----------------------------------------------------------
 
 def list_mailboxes(domain):
-    """All mailboxes for one domain, with their quota."""
+    """All mailboxes for one domain, with quota, approximate usage, and suspension state."""
     quotas = _read_quotas()
-    return [
-        {"username": a["email"], "quota": quotas.get(a["email"], DEFAULT_QUOTA)}
-        for a in _read_accounts()
-        if a["email"].split("@", 1)[-1] == domain
-    ]
+    individually_suspended = set(_read_clients()["suspended_mailboxes"])
+    mailboxes = []
+    for a in _read_accounts():
+        if _domain_of(a["email"]) != domain:
+            continue
+        quota = quotas.get(a["email"], DEFAULT_QUOTA)
+        quota_bytes = _quota_bytes(quota)
+        used = mailbox_usage(a["email"])
+        mailboxes.append({
+            "username": a["email"],
+            "quota": quota,
+            "quota_bytes": quota_bytes,
+            "used_bytes": used,
+            "used_percent": min(round(used * 100 / quota_bytes), 100) if used is not None and quota_bytes else None,
+            "suspended": _is_suspended_hash(a["hash"]),
+            "individually_suspended": a["email"] in individually_suspended,
+            "is_admin": a["email"] in settings.ADMIN_EMAILS,
+        })
+    return mailboxes
 
 
 def add_mailbox(domain, local_part, password, quota=DEFAULT_QUOTA):
@@ -264,16 +613,25 @@ def add_mailbox(domain, local_part, password, quota=DEFAULT_QUOTA):
     change-detector notices the file changed - no restart needed.
     """
     email = f"{local_part}@{domain}".strip().lower()
+    quota = quota.strip().upper()
+    quota_bytes = parse_size(quota)
     accounts = _read_accounts()
     if any(a["email"] == email for a in accounts):
         raise MailAdminError(f"{email} already exists.")
 
-    accounts.append({"email": email, "hash": "{SHA512-CRYPT}" + sha512_crypt.hash(password)})
-    _write_accounts(accounts)
-
     quotas = _read_quotas()
+    data = _read_clients()
+    slug, client = _client_for_domain(_domain_of(email), data)
+    if client is not None:
+        _check_limits(_client_summary(slug, client, accounts, quotas, False), extra_mailboxes=1, extra_bytes=quota_bytes)
+
+    # Quota first, so DMS never sees the new account without its quota.
     quotas[email] = quota
     _write_quotas(quotas)
+
+    accounts.append({"email": email, "hash": "{SHA512-CRYPT}" + sha512_crypt.hash(password)})
+    _apply_suspension(accounts, data)
+    _write_accounts(accounts)
 
 
 def delete_mailbox(username):
@@ -284,6 +642,44 @@ def delete_mailbox(username):
     quotas = _read_quotas()
     quotas.pop(username, None)
     _write_quotas(quotas)
+
+    data = _read_clients()
+    if username in data["suspended_mailboxes"]:
+        data["suspended_mailboxes"].remove(username)
+        _write_clients(data)
+
+
+def change_mailbox_password(email, current_password, new_password):
+    """
+    Let a mailbox owner change their own password. Verifies `current_password`
+    against the stored hash (not via IMAP), so this works even if the mail
+    server hasn't finished its ~2s reload yet. Re-applies any suspension
+    marker afterward so changing a password never accidentally unsuspends
+    an account. The plaintext is never written to disk.
+    """
+    email = email.strip().lower()
+    if len(new_password) < 8:
+        raise MailAdminError("Use at least 8 characters.")
+
+    accounts = _read_accounts()
+    for acc in accounts:
+        if acc["email"] != email:
+            continue
+        if _is_suspended_hash(acc["hash"]):
+            raise MailAdminError("This mailbox is suspended.")
+        stored = _HASH_RE.match(acc["hash"]).group(3)
+        if not sha512_crypt.verify(current_password, stored):
+            raise MailAdminError("Current password is incorrect.")
+        if sha512_crypt.verify(new_password, stored):
+            raise MailAdminError("Choose a password different from the current one.")
+
+        data = _read_clients()
+        acc["hash"] = "{SHA512-CRYPT}" + sha512_crypt.hash(new_password)
+        _apply_suspension(accounts, data)
+        _write_accounts(accounts)
+        return
+
+    raise MailAdminError(f"{email} doesn't exist.")
 
 
 # --- DKIM (Rspamd module - hot-reloadable via change-detection) ---------

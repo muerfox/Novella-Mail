@@ -208,6 +208,29 @@ def find_special_folder(folders, kind):
     return None
 
 
+def get_quota(server):
+    """
+    The logged-in mailbox's storage use as {"used": bytes, "limit": bytes,
+    "percent": int}, or None if the server doesn't report a storage quota.
+    Never raises - a missing quota display shouldn't break the inbox.
+    """
+    try:
+        if not server.has_capability("QUOTA"):
+            return None
+        _roots, quotas = server.get_quota_root("INBOX")
+    except Exception:  # noqa: BLE001
+        return None
+    for q in quotas:
+        try:
+            # RFC 2087 STORAGE values are in units of 1024 octets.
+            used, limit = int(q.usage) * 1024, int(q.limit) * 1024
+        except (TypeError, ValueError):
+            continue
+        if q.resource.upper() == "STORAGE" and limit:
+            return {"used": used, "limit": limit, "percent": min(round(used * 100 / limit), 100)}
+    return None
+
+
 # --- Listing / reading messages -----------------------------------------
 
 def list_messages(server, folder, page=1, per_page=None):

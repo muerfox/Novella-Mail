@@ -98,6 +98,12 @@ Hit **Compose** for a new message, or **Reply**, **Reply all**, or
 and threading headers for you. Attachments work both ways: attach files
 when composing, and download attachments from received mail.
 
+### Changing your password
+
+Any mailbox can change its own password from **Password** in the top bar
+(current password + new password twice). You stay signed in; other mail
+apps need the new password after the mail server picks it up (a few seconds).
+
 ### Adding a domain
 
 Open **Domains** in the top bar (only visible to accounts listed in
@@ -115,6 +121,16 @@ From that page you can:
    for actually landing in inboxes instead of spam folders.
 3. **Add mailboxes** for the domain — an address and a password, and it's
    receiving mail within a few seconds.
+
+### Clients, quotas and suspension
+
+Open **Clients** in the top bar to create a client (a customer you host
+mail for) with limits on domains, mailboxes and total storage, then add
+its domains. From there you can raise or lower limits, set each mailbox's
+quota, see how much storage is used, and suspend a single mailbox or a
+whole client (logins stop, incoming mail is still accepted). Clients
+themselves just log into webmail with their mailbox. See
+[docs/SETUP.md](docs/SETUP.md) section 10.
 
 Deleting a domain removes it and all its mailboxes (there's a confirmation
 prompt — it's not reversible from the panel, though the actual delivered

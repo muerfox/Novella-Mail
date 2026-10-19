@@ -26,7 +26,15 @@ from django.views.decorators.http import require_http_methods
 
 from . import crypto, mail, mailadmin
 from .decorators import admin_required, mail_login_required
-from .forms import AddDomainForm, AddMailboxForm, ComposeForm, LoginForm
+from .forms import (
+    AddDomainForm,
+    AddMailboxForm,
+    ChangePasswordForm,
+    ClientForm,
+    ComposeForm,
+    LoginForm,
+    QuotaForm,
+)
 
 
 def login_view(request):
@@ -52,6 +60,8 @@ def login_view(request):
             server.logout()
         except mail.MailError as exc:
             error = str(exc)
+            if mailadmin.is_mailbox_suspended(email_addr):
+                error = "This mailbox is suspended. Please contact your email provider."
         else:
             request.session["mail_email"] = email_addr
             request.session["mail_password_enc"] = crypto.encrypt(password)
@@ -124,9 +134,10 @@ def mail_view(request):
     page = max(_safe_int(request.GET.get("page"), 1), 1)
     uid = request.GET.get("uid")
 
-    folders, msg_list, total, detail = [], [], 0, None
+    folders, msg_list, total, detail, quota = [], [], 0, None, None
     try:
         folders = mail.list_folders(server)
+        quota = mail.get_quota(server)
         msg_list, total = mail.list_messages(server, folder, page=page)
         if uid:
             uid_int = _safe_int(uid, None)
@@ -154,6 +165,7 @@ def mail_view(request):
         "total_pages": total_pages,
         "total": total,
         "selected_uid": _safe_int(uid, None),
+        "quota": quota,
     }
     return render(request, "webmail/mail.html", context)
 
@@ -318,6 +330,33 @@ def compose_view(request):
 
 
 @mail_login_required
+def change_password_view(request):
+    """
+    Let the logged-in mailbox owner change their own password. On success the
+    session's encrypted password is updated so IMAP/SMTP keep working without
+    forcing a re-login. docker-mailserver picks up the new hash within a few
+    seconds; until then a freshly opened mail client may still see the old one.
+    """
+    email_addr, _password = _get_session_creds(request)
+    form = ChangePasswordForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            mailadmin.change_mailbox_password(
+                email_addr,
+                form.cleaned_data["current_password"],
+                form.cleaned_data["new_password"],
+            )
+        except mailadmin.MailAdminError as exc:
+            messages.error(request, str(exc))
+        else:
+            request.session["mail_password_enc"] = crypto.encrypt(form.cleaned_data["new_password"])
+            messages.success(request, "Password changed. It takes effect within a few seconds.")
+            return redirect("webmail:mail")
+
+    return render(request, "webmail/change_password.html", {"form": form})
+
+
+@mail_login_required
 def attachment_download(request):
     """Stream one attachment's bytes back with a Content-Disposition header, so the browser downloads/saves it."""
     folder = request.GET.get("folder")
@@ -355,6 +394,18 @@ def attachment_download(request):
 # manages docker-mailserver purely by reading/writing its config files on
 # a volume shared between the two containers.
 
+def _clean_domain(value):
+    """
+    Validate and lowercase a domain taken from a URL or POST field. These
+    end up in filenames and Rspamd's shared dkim_signing.conf, so anything
+    AddDomainForm wouldn't accept must never reach webmail.mailadmin.
+    """
+    form = AddDomainForm({"domain": value or ""})
+    if not form.is_valid():
+        raise Http404("Invalid domain.")
+    return form.cleaned_data["domain"]
+
+
 @admin_required
 def domain_list(request):
     """List known domains, and handle the "add a domain" form."""
@@ -373,9 +424,9 @@ def domain_list(request):
 @require_http_methods(["POST"])
 def domain_action(request):
     """Currently just handles domain deletion (its own mailboxes + DKIM key registration go with it)."""
-    domain = request.POST.get("domain")
+    domain = _clean_domain(request.POST.get("domain"))
     action = request.POST.get("action")
-    if action == "delete" and domain:
+    if action == "delete":
         mailadmin.delete_domain(domain)
         messages.success(request, f"Domain {domain} deleted.")
     return redirect("webmail:admin_domains")
@@ -390,6 +441,9 @@ def domain_detail(request, domain):
     page works fine for a domain with zero mailboxes and no DKIM key yet,
     that's exactly the state right after typing a brand new domain in.
     """
+    clean = _clean_domain(domain)
+    if clean != domain:
+        return redirect("webmail:admin_domain_detail", domain=clean)
     mailbox_form = AddMailboxForm()
 
     if request.method == "POST" and request.POST.get("form_name") == "mailbox":
@@ -400,6 +454,7 @@ def domain_detail(request, domain):
                     domain,
                     mailbox_form.cleaned_data["local_part"],
                     mailbox_form.cleaned_data["password"],
+                    quota=mailbox_form.cleaned_data["quota"],
                 )
             except mailadmin.MailAdminError as exc:
                 messages.error(request, f"Could not add mailbox: {exc}")
@@ -415,6 +470,15 @@ def domain_detail(request, domain):
             messages.error(request, f"Could not generate DKIM key: {exc}")
         return redirect("webmail:admin_domain_detail", domain=domain)
 
+    elif request.method == "POST" and request.POST.get("form_name") == "owner":
+        try:
+            mailadmin.assign_domain(request.POST.get("client", ""), domain)
+            messages.success(request, "Domain assigned.")
+        except mailadmin.MailAdminError as exc:
+            messages.error(request, f"Could not assign domain: {exc}")
+        return redirect("webmail:admin_domain_detail", domain=domain)
+
+    owner = mailadmin.client_for_domain(domain)
     context = {
         "domain": domain,
         "info": mailadmin.get_domain(domain),
@@ -422,6 +486,8 @@ def domain_detail(request, domain):
         "dkim": mailadmin.get_dkim(domain),
         "mailbox_form": mailbox_form,
         "mail_domain": settings.MAIL_DOMAIN,
+        "owner": owner,
+        "clients": [] if owner else mailadmin.list_clients(with_usage=False),
     }
     return render(request, "webmail/admin_domain_detail.html", context)
 
@@ -429,11 +495,96 @@ def domain_detail(request, domain):
 @admin_required
 @require_http_methods(["POST"])
 def mailbox_action(request):
-    """Currently just handles mailbox deletion."""
-    domain = request.POST.get("domain")
-    username = request.POST.get("username")
+    """Per-mailbox admin actions from a domain's mailbox table: delete, suspend/unsuspend, change quota."""
+    domain = _clean_domain(request.POST.get("domain"))
+    username = (request.POST.get("username") or "").strip().lower()
     action = request.POST.get("action")
-    if action == "delete" and username:
-        mailadmin.delete_mailbox(username)
-        messages.success(request, f"Mailbox {username} deleted.")
+    if not username.endswith(f"@{domain}"):
+        return HttpResponseBadRequest("Mailbox doesn't belong to this domain.")
+
+    try:
+        if action == "delete":
+            mailadmin.delete_mailbox(username)
+            messages.success(request, f"Mailbox {username} deleted.")
+        elif action in ("suspend", "unsuspend"):
+            mailadmin.set_mailbox_suspended(username, action == "suspend")
+            messages.success(request, f"Mailbox {username} {action}ed.")
+        elif action == "quota":
+            form = QuotaForm(request.POST)
+            if form.is_valid():
+                mailadmin.set_mailbox_quota(username, form.cleaned_data["quota"])
+                messages.success(request, f"Quota for {username} set to {form.cleaned_data['quota']}.")
+            else:
+                messages.error(request, "; ".join(form.errors["quota"]))
+    except mailadmin.MailAdminError as exc:
+        messages.error(request, str(exc))
     return redirect("webmail:admin_domain_detail", domain=domain)
+
+
+# --- Client admin ----------------------------------------------------------
+# Clients are customers you host mail for: each groups some domains and has
+# limits (domains, mailboxes, total storage) enforced by webmail.mailadmin.
+# Clients don't log into this section themselves - they only use webmail.
+
+def _client_form_initial(client):
+    return {k: client[k] for k in ("name", "max_domains", "max_mailboxes", "max_storage")}
+
+
+@admin_required
+def client_list(request):
+    """List clients with their usage against limits, and handle the "add a client" form."""
+    form = ClientForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            slug = mailadmin.create_client(**form.cleaned_data)
+        except mailadmin.MailAdminError as exc:
+            messages.error(request, str(exc))
+        else:
+            messages.success(request, "Client created - now add its domains.")
+            return redirect("webmail:admin_client_detail", slug=slug)
+    return render(request, "webmail/admin_clients.html", {"clients": mailadmin.list_clients(), "form": form})
+
+
+@admin_required
+def client_detail(request, slug):
+    """One client's page: usage, limits, suspend/unsuspend, delete, and its domains."""
+    client = mailadmin.get_client(slug)
+    if client is None:
+        raise Http404("No such client.")
+
+    limits_form = ClientForm(initial=_client_form_initial(client))
+    domain_form = AddDomainForm()
+    if request.method == "POST":
+        form_name = request.POST.get("form_name")
+        try:
+            if form_name == "limits":
+                limits_form = ClientForm(request.POST)
+                if limits_form.is_valid():
+                    mailadmin.update_client(slug, **limits_form.cleaned_data)
+                    messages.success(request, "Client updated.")
+                    return redirect("webmail:admin_client_detail", slug=slug)
+            elif form_name == "assign":
+                domain_form = AddDomainForm(request.POST)
+                if domain_form.is_valid():
+                    mailadmin.assign_domain(slug, domain_form.cleaned_data["domain"])
+                    messages.success(request, f"{domain_form.cleaned_data['domain']} added to this client.")
+                    return redirect("webmail:admin_client_detail", slug=slug)
+            elif form_name == "unassign":
+                domain = _clean_domain(request.POST.get("domain"))
+                mailadmin.unassign_domain(slug, domain)
+                messages.success(request, f"{domain} removed from this client (its mailboxes were kept).")
+                return redirect("webmail:admin_client_detail", slug=slug)
+            elif form_name in ("suspend", "unsuspend"):
+                mailadmin.set_client_suspended(slug, form_name == "suspend")
+                messages.success(request, f"Client {form_name}ed.")
+                return redirect("webmail:admin_client_detail", slug=slug)
+            elif form_name == "delete":
+                mailadmin.delete_client(slug)
+                messages.success(request, f"Client {client['name']} deleted. Its domains and mailboxes were kept.")
+                return redirect("webmail:admin_clients")
+        except mailadmin.MailAdminError as exc:
+            messages.error(request, str(exc))
+
+    domains = [d for d in mailadmin.list_domains() if d["domain"] in client["domains"]]
+    context = {"client": client, "domains": domains, "limits_form": limits_form, "domain_form": domain_form}
+    return render(request, "webmail/admin_client_detail.html", context)
