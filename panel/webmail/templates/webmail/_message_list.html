@@ -1,6 +1,12 @@
 <div class="list-toolbar">
   <h2>{{ current_folder }}</h2>
-  <span class="muted">{{ total }} message{{ total|pluralize }}</span>
+  <div class="list-toolbar-right">
+    <span class="muted">{{ total }} message{{ total|pluralize }}</span>
+    <a class="icon-btn refresh-btn" title="Refresh" aria-label="Refresh"
+       href="{% url 'webmail:mail' %}?folder={{ current_folder|urlencode }}&page={{ page }}{% if selected_uid %}&uid={{ selected_uid }}{% endif %}">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
+    </a>
+  </div>
 </div>
 <ul class="message-list">
   {% for m in messages_list %}

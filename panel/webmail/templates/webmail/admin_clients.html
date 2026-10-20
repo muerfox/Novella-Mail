@@ -8,7 +8,7 @@
     <div class="topbar-user">
       <a href="{% url 'webmail:admin_domains' %}">Domains</a>
       <span class="user-email">{{ mail_email }}</span>
-      <a href="{% url 'webmail:logout' %}">Sign out</a>
+      <a href="{% url 'webmail:logout' %}" hx-boost="false">Sign out</a>
     </div>
   </header>
 

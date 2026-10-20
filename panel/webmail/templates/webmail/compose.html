@@ -14,7 +14,8 @@
   {% endif %}
 
   <main class="compose-main">
-    <form method="post" enctype="multipart/form-data" class="compose-form">
+    <form method="post" enctype="multipart/form-data" class="compose-form" data-once-submit
+          hx-disabled-elt="find button[type='submit'], find a.btn">
       {% csrf_token %}
       {{ form.in_reply_to }}
       {{ form.references }}
@@ -36,7 +37,11 @@
       <input type="file" name="attachments" id="attachments" multiple>
 
       <div class="compose-actions">
-        <button type="submit" class="btn btn-primary">Send</button>
+        <button type="submit" class="btn btn-primary btn-send">
+          <span class="spinner" aria-hidden="true"></span>
+          <span class="btn-label">Send</span>
+          <span class="btn-label-busy">Sending…</span>
+        </button>
         <a href="{% url 'webmail:mail' %}" class="btn">Cancel</a>
       </div>
     </form>

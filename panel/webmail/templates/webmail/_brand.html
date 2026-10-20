@@ -1,0 +1,5 @@
+{% load static %}
+<a class="brand{% if brand_compact %} brand-compact{% endif %}" href="{% url 'webmail:mail' %}" hx-boost="false">
+  <img class="brand-mark" src="{% static 'webmail/img/logo.svg' %}" width="28" height="28" alt="">
+  <span class="brand-name">Novella Mail</span>
+</a>

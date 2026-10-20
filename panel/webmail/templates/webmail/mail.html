@@ -6,7 +6,7 @@
 <div class="app-shell {% if detail %}has-detail{% endif %}">
   <header class="topbar">
     <label for="nav-toggle" class="hamburger" aria-label="Toggle folders">☰</label>
-    <div class="brand">Novella Mail</div>
+    {% include "webmail/_brand.html" %}
     <a href="{% url 'webmail:compose' %}" class="btn btn-primary btn-compose">✎ Compose</a>
     <div class="topbar-user">
       {% if is_admin %}
@@ -15,7 +15,7 @@
       {% endif %}
       <span class="user-email">{{ mail_email }}</span>
       <a href="{% url 'webmail:change_password' %}">Password</a>
-      <a href="{% url 'webmail:logout' %}">Sign out</a>
+      <a href="{% url 'webmail:logout' %}" hx-boost="false">Sign out</a>
     </div>
   </header>
 

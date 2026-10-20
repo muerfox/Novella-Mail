@@ -23,6 +23,7 @@ from django.http import Http404, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
+from django_htmx.http import HttpResponseClientRedirect
 
 from . import crypto, mail, mailadmin
 from .decorators import admin_required, mail_login_required
@@ -37,6 +38,19 @@ from .forms import (
 )
 
 
+def _redirect(request, viewname, **kwargs):
+    """
+    Redirect that works under hx-boost. A normal Django redirect is followed
+    as another AJAX request by htmx, which breaks logout (session already
+    flushed) and leaves a half-swapped page. For htmx requests we return
+    HX-Redirect so the browser does a full navigation instead.
+    """
+    url = reverse(viewname, kwargs=kwargs)
+    if getattr(request, "htmx", False):
+        return HttpResponseClientRedirect(url)
+    return redirect(url)
+
+
 def login_view(request):
     """
     Log in with a real mailbox email + password.
@@ -48,7 +62,7 @@ def login_view(request):
     without asking the user to type their password on every page.
     """
     if request.session.get("mail_email"):
-        return redirect("webmail:mail")
+        return _redirect(request, "webmail:mail")
 
     error = None
     form = LoginForm(request.POST or None)
@@ -66,7 +80,7 @@ def login_view(request):
             request.session["mail_email"] = email_addr
             request.session["mail_password_enc"] = crypto.encrypt(password)
             request.session.set_expiry(0)  # expire when the browser closes
-            return redirect("webmail:mail")
+            return _redirect(request, "webmail:mail")
 
     return render(request, "webmail/login.html", {"form": form, "error": error})
 
@@ -74,7 +88,7 @@ def login_view(request):
 def logout_view(request):
     """Clear the session (email + encrypted password) and send back to login."""
     request.session.flush()
-    return redirect("webmail:login")
+    return _redirect(request, "webmail:login")
 
 
 def _get_session_creds(request):
@@ -97,15 +111,14 @@ def _connect_or_bail(request):
     """
     email_addr, password = _get_session_creds(request)
     if not email_addr or not password:
-        return None, redirect("webmail:login")
+        return None, _redirect(request, "webmail:login")
     try:
         server = mail.get_imap_connection(email_addr, password)
     except mail.MailError:
         request.session.flush()
         messages.error(request, "Your mail session expired or credentials were rejected. Please log in again.")
-        return None, redirect("webmail:login")
+        return None, _redirect(request, "webmail:login")
     return server, None
-
 
 def _safe_int(value, default):
     """int(value), or `default` if value is missing/not a valid integer."""
