@@ -27,7 +27,7 @@ You need:
 
 - A server with a public, static IP.
 - A domain you control DNS for.
-- Docker Engine >= 24 and the `docker compose` plugin >= 2.24.
+- Docker Engine >= 24 and the `docker compose` plugin.
 - Port **25 outbound** not blocked by your hosting provider (many cloud
   providers block it by default for new accounts — check with them first,
   otherwise you can't send mail).
@@ -94,10 +94,8 @@ export DJANGO_SECRET_KEY="$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-
 export ADMIN_EMAILS=you@yourdomain.com
 docker compose up -d
 ```
-This needs Docker Compose 2.24 or newer (`docker compose version`). Extra
-docker-mailserver settings (e.g. `ENABLE_CLAMAV`) only reach the mail
-server through `.env`; without one, add them to the `mailserver`
-service's `environment:` in `docker-compose.yml`.
+Extra docker-mailserver settings (e.g. `ENABLE_CLAMAV`) go in the
+`mailserver` service's `environment:` block in `docker-compose.yml`.
 
 First boot pulls the docker-mailserver image and builds the panel image -
 needs internet access for that, the only point in the whole setup that

@@ -19,9 +19,13 @@
 # Every ${VARIABLE} below is read from the shell environment, or from the
 # .env file that setup.sh generates if one exists (see .env.example for
 # what each one means and its default) - a variable set in the shell wins
-# over the same one in .env. .env is optional: exporting the variables
-# (systemd unit, CI, `export ...`) works just as well. `env_file` with
-# `required: false` needs Docker Compose 2.24 or newer.
+# over the same one in .env. .env is optional: Compose loads it for
+# ${...} interpolation when present, and exporting the variables
+# (systemd unit, CI, `export ...`) works with no .env at all. We do not
+# use `env_file:` here - the object form needs Compose 2.24+, and the
+# string form fails when .env is missing - so everything the containers
+# need is listed under `environment:` below. Extra docker-mailserver
+# settings (e.g. ENABLE_CLAMAV) go in the mailserver `environment:` block.
 name: novella-mail
 
 services:
@@ -33,15 +37,7 @@ services:
     # certificate and in its SMTP greeting.
     hostname: ${MAIL_DOMAIN:?set MAIL_DOMAIN in .env or the environment}
     restart: unless-stopped
-    # Any extra docker-mailserver setting you put in .env (ENABLE_CLAMAV,
-    # ...) is passed through from here; without a .env, add it below.
-    env_file:
-      - path: .env
-        required: false
     environment:
-      # Only set in the container when set in the shell/.env.
-      - SSL_CERT_PATH
-      - SSL_KEY_PATH
       - ENABLE_POP3=1
       # Rspamd handles DKIM signing (ENABLE_OPENDKIM=0) instead of the
       # older OpenDKIM daemon, specifically because Rspamd's DKIM keys are
@@ -65,6 +61,8 @@ services:
       # to a real certificate (mail clients will otherwise show an
       # "untrusted certificate" warning on first connect).
       - SSL_TYPE=${SSL_TYPE:-self-signed}
+      - SSL_CERT_PATH=${SSL_CERT_PATH:-}
+      - SSL_KEY_PATH=${SSL_KEY_PATH:-}
       # Do not relax this - it's what stops this server from being usable
       # as an open relay by anything that can merely reach these ports,
       # without a valid account login.
@@ -99,9 +97,6 @@ services:
   panel:
     build: panel
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
     environment:
       # Everything the panel reads (see panel/novella/settings.py), passed
       # through from the shell or .env, with .env.example's defaults.
