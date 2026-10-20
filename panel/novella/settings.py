@@ -195,7 +195,7 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 LOGIN_URL = "webmail:login"
 
 # --- Reverse proxy -----------------------------------------------------
-# The panel only binds 127.0.0.1:3010 (see docker-compose.yml) - it's
+# The panel only binds 127.0.0.1 on PANEL_PORT (see docker-compose.yml) - it's
 # designed to sit behind your own reverse proxy (nginx/Caddy/Traefik/
 # whatever you already run), which handles the actual public HTTPS. That
 # proxy MUST set the X-Forwarded-Proto header (and should set
@@ -203,7 +203,7 @@ LOGIN_URL = "webmail:login"
 # know the original request was HTTPS - without this, secure cookies and
 # generated URLs silently break behind a proxy. Trusting these headers is
 # safe specifically *because* the panel isn't reachable except through
-# that proxy: nothing else can reach 127.0.0.1:3010 to spoof them.
+# that proxy: nothing else can reach 127.0.0.1:PANEL_PORT to spoof them.
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # Comma separated, e.g. https://mail-panel.yourdomain.com - the public

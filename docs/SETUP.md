@@ -122,7 +122,7 @@ networks:
 ## 4. Firewall
 
 Open only the mail ports publicly. Do **not** open the panel's port
-(3010 by default).
+(`PANEL_PORT`, 3020 by default).
 
 ```
 sudo ufw allow 25/tcp    # SMTP (inbound mail)
@@ -136,18 +136,26 @@ sudo ufw allow 995/tcp   # POP3S (optional)
 
 ## 5. Reaching the panel
 
-The panel only listens on `127.0.0.1:3010`. This repo assumes you're
-putting your own reverse proxy (nginx/Caddy/Traefik/whatever) in front of
-it for public HTTPS access - point it at `127.0.0.1:3010` and make sure it
-sets `X-Forwarded-Proto` (see `novella/settings.py`'s reverse-proxy
+The panel only listens on `127.0.0.1` at `PANEL_PORT` (3020 by default —
+set it in `.env` or the environment). This repo assumes you're putting
+your own reverse proxy (nginx/Caddy/Traefik/whatever) in front of it for
+public HTTPS access - point it at `127.0.0.1:${PANEL_PORT}` and make sure
+it sets `X-Forwarded-Proto` (see `novella/settings.py`'s reverse-proxy
 section; also set `CSRF_TRUSTED_ORIGINS` in `.env` to the public URL you
 serve it under).
 
+**"Bind for 127.0.0.1:… failed: port is already allocated"** — something
+else on the host already uses that port. Pick a free one:
+```
+export PANEL_PORT=3021   # or set PANEL_PORT=… in .env
+docker compose up -d
+```
+
 No reverse proxy yet? An SSH tunnel works for yourself in the meantime:
 ```
-ssh -L 3010:127.0.0.1:3010 you@your-server
+ssh -L 3020:127.0.0.1:3020 you@your-server
 ```
-then open `http://127.0.0.1:3010`.
+then open `http://127.0.0.1:3020` (use the same port as `PANEL_PORT`).
 
 ## 6. First login
 

@@ -151,7 +151,7 @@ cat <<EOF
 ==> Setup finished.
 
 Mail ports:  SMTP 25, SMTPS 465, Submission 587, IMAP 143, IMAPS 993, POP3 110/995 - all public.
-Panel:       127.0.0.1:\${PANEL_PORT:-3010} - put your own reverse proxy in front of it.
+Panel:       127.0.0.1:\${PANEL_PORT:-3020} - put your own reverse proxy in front of it.
 EOF
 
 if [ -n "$MAILBOX_CREATED" ]; then

@@ -131,9 +131,10 @@ services:
     # directly from the internet. Put your own reverse proxy (nginx/Caddy/
     # Traefik/whatever) in front of this port for public HTTPS access -
     # see docs/SETUP.md section 5 and the reverse-proxy notes in
-    # panel/novella/settings.py.
+    # panel/novella/settings.py. Host port comes from PANEL_PORT in .env
+    # or the environment (default 3020).
     ports:
-      - "127.0.0.1:${PANEL_PORT:-3010}:8000"
+      - "127.0.0.1:${PANEL_PORT:-3020}:8000"
 
 volumes:
   mail-data:

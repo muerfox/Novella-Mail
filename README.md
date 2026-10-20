@@ -174,7 +174,7 @@ container images, so an update never touches them.
   +----------------+                      +-----------v------------+
   | your browser   |    reverse proxy     |         panel          |
   |                | -------------------> |    (Django + htmx)     |
-  |                | <------------------- |   127.0.0.1:3010 only  |
+  |                | <------------------- |  127.0.0.1:PANEL_PORT  |
   +----------------+  (you provide this)  +------------------------+
 ```
 
@@ -211,8 +211,8 @@ understand how the whole thing works, not just how to run it.
 ## Security notes
 
 - The panel is **not** meant to be exposed directly to the internet — it
-  binds `127.0.0.1:3010` specifically so you put your own reverse proxy
-  (with your own TLS certificate) in front of it.
+  binds `127.0.0.1` on `PANEL_PORT` (3020 by default) specifically so you
+  put your own reverse proxy (with your own TLS certificate) in front of it.
 - Mail protocol ports (25/465/587/143/993/...) **are** public, because
   that's what a mail server needs — nothing unusual there.
 - `PERMIT_DOCKER=none` (in `docker-compose.yml`) keeps the mail server from
