@@ -152,9 +152,9 @@ Log out and back in, and a **Domains** link appears in the top bar.
 ./update.sh
 ```
 
-Pulls the latest mail server image, rebuilds the panel from whatever code
-is currently checked out (so `git pull` first if you want newer panel
-code), and restarts only what changed. Your mail, domains, mailboxes, and
+(`git pull` first if you want newer panel code.) Pulls the latest mail
+server image, rebuilds the panel from whatever is checked out, and
+restarts only what changed. Your mail, domains, mailboxes, and
 DKIM keys all live in Docker volumes completely separate from the
 container images, so an update never touches them.
 
