@@ -148,6 +148,8 @@ Log out and back in, and a **Domains** link appears in the top bar.
 
 ## Keeping it up to date
 
+Pull, then:
+
 ```bash
 ./update.sh
 ```
