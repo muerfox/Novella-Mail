@@ -181,10 +181,18 @@ type, there's no separate panel account.
 ## 7. TLS for mail (IMAPS/SMTPS) — the tradeoff
 
 `.env` defaults `SSL_TYPE=self-signed`, so mail services get a self-signed
-cert with no setup required - that's also why `MAIL_TLS_INSECURE=true` is
-the default (it disables certificate verification on the panel's own
-internal IMAP/SMTP connections to docker-mailserver). Desktop/mobile mail
-clients will show an "untrusted certificate" warning on first connect.
+cert with no setup required. docker-mailserver doesn't create that cert
+itself, so the one-shot `certs` service in `docker-compose.yml` generates it
+(a small CA plus a certificate for `MAIL_DOMAIN`, valid 10 years) in the
+`mailserver-config` volume before the mail server starts, and leaves it
+alone on later boots. That's also why `MAIL_TLS_INSECURE=true` is the
+default (it disables certificate verification on the panel's own internal
+IMAP/SMTP connections to docker-mailserver). Desktop/mobile mail clients
+will show an "untrusted certificate" warning on first connect; to avoid
+it, install the generated CA on those devices:
+```
+docker compose run --rm --no-deps --entrypoint cat certs /mailserver-config/ssl/demoCA/cacert.pem > novella-ca.pem
+```
 
 To use a real certificate instead, get one however you'd like (e.g. `certbot`
 with a DNS-01 plugin, run separately - docker-mailserver doesn't obtain
@@ -202,7 +210,7 @@ mounting your real cert directory into the `mailserver` service in
 
 ```
 docker compose pull mailserver
-docker compose build panel
+docker compose build panel certs
 docker compose up -d
 ```
 

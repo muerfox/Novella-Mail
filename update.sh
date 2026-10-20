@@ -32,7 +32,7 @@ echo "==> Pulling the latest docker-mailserver image"
 docker compose pull mailserver
 
 echo "==> Rebuilding the panel image from panel/"
-docker compose build panel
+docker compose build panel certs
 
 echo "==> Recreating any containers that changed"
 docker compose up -d
