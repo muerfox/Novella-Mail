@@ -8,7 +8,8 @@ actually happens). Almost every setting here is filled in from environment
 variables (via `os.environ.get(...)`) rather than hardcoded, because this
 same code runs unmodified for anyone who deploys it - the actual values
 live in `.env` at the repo root (see `.env.example` for what each one
-means and setup.sh, which generates `.env` for you).
+means and setup.sh, which generates `.env` for you) or straight in the
+OS environment - `.env` is optional.
 """
 import os
 from pathlib import Path
@@ -20,12 +21,13 @@ from dotenv import load_dotenv
 # database and collected static files inside the container.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Reads panel/.env if it exists (useful for local development outside
-# Docker) and sets each KEY=value line as a real environment variable, but
-# only for keys that aren't already set - so real container env vars from
-# docker-compose.yml (which reads the repo-root .env via `env_file:`)
-# always win over anything in this file's own directory.
+# Reads panel/.env, then the repo-root .env, if they exist (useful for
+# local development outside Docker) and sets each KEY=value line as a real
+# environment variable, but only for keys that aren't already set - so the
+# OS environment (including container env vars from docker-compose.yml)
+# always wins, and with no .env at all everything comes from the OS.
 load_dotenv(BASE_DIR / ".env")
+load_dotenv(BASE_DIR.parent / ".env")
 
 
 def _env_bool(name, default=False):

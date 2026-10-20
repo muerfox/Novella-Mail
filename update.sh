@@ -21,8 +21,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
-if [ ! -f .env ]; then
-  echo "No .env found - run ./setup.sh first." >&2
+# .env is optional as long as the settings come from the environment instead
+# (docker compose itself reports exactly which required one is missing).
+if [ ! -f .env ] && [ -z "${MAIL_DOMAIN:-}" ]; then
+  echo "No .env found and MAIL_DOMAIN isn't set - run ./setup.sh first, or export the settings from .env.example." >&2
   exit 1
 fi
 

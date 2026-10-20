@@ -16,8 +16,12 @@
 # socket access granted to the panel. See panel/webmail/mailadmin.py for
 # the code that writes into this shared volume.
 #
-# Every ${VARIABLE} below is read from the .env file that setup.sh
-# generates (see .env.example for what each one means and its default).
+# Every ${VARIABLE} below is read from the shell environment, or from the
+# .env file that setup.sh generates if one exists (see .env.example for
+# what each one means and its default) - a variable set in the shell wins
+# over the same one in .env. .env is optional: exporting the variables
+# (systemd unit, CI, `export ...`) works just as well. `env_file` with
+# `required: false` needs Docker Compose 2.24 or newer.
 name: novella-mail
 
 services:
@@ -27,11 +31,17 @@ services:
     # rather than silently starting with an empty/wrong hostname - this is
     # the mail server's own identity (its FQDN), used for its TLS
     # certificate and in its SMTP greeting.
-    hostname: ${MAIL_DOMAIN:?set MAIL_DOMAIN in .env}
+    hostname: ${MAIL_DOMAIN:?set MAIL_DOMAIN in .env or the environment}
     restart: unless-stopped
+    # Any extra docker-mailserver setting you put in .env (ENABLE_CLAMAV,
+    # ...) is passed through from here; without a .env, add it below.
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
+      # Only set in the container when set in the shell/.env.
+      - SSL_CERT_PATH
+      - SSL_KEY_PATH
       - ENABLE_POP3=1
       # Rspamd handles DKIM signing (ENABLE_OPENDKIM=0) instead of the
       # older OpenDKIM daemon, specifically because Rspamd's DKIM keys are
@@ -90,8 +100,23 @@ services:
     build: panel
     restart: unless-stopped
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
+      # Everything the panel reads (see panel/novella/settings.py), passed
+      # through from the shell or .env, with .env.example's defaults.
+      - MAIL_DOMAIN=${MAIL_DOMAIN:?set MAIL_DOMAIN in .env or the environment}
+      - TZ=${TZ:-UTC}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY in .env or the environment}
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-false}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-127.0.0.1,localhost}
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-}
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
+      - MAIL_IMAP_HOST=${MAIL_IMAP_HOST:-mailserver}
+      - MAIL_IMAP_PORT=${MAIL_IMAP_PORT:-993}
+      - MAIL_SMTP_HOST=${MAIL_SMTP_HOST:-mailserver}
+      - MAIL_SMTP_PORT=${MAIL_SMTP_PORT:-587}
+      - MAIL_TLS_INSECURE=${MAIL_TLS_INSECURE:-true}
       # Where *this* container sees the shared config volume (matches the
       # MAIL_CONFIG_DIR default in panel/novella/settings.py) - deliberately
       # not the same path as the mailserver service's mount point above,
