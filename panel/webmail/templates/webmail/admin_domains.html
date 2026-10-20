@@ -3,8 +3,14 @@
 {% block body %}
 <div class="app-shell compose-shell">
   <header class="topbar">
-    <a href="{% url 'webmail:mail' %}" class="back-link">‹ Mail</a>
-    <div class="brand"><span class="brand-name">Domains</span></div>
+    <a href="{% url 'webmail:mail' %}" class="back-link">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-back"/></svg>
+      Mail
+    </a>
+    <div class="brand">
+      <svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg>
+      <span class="brand-name">Domains</span>
+    </div>
     <div class="topbar-user">
       <a href="{% url 'webmail:admin_clients' %}">Clients</a>
       <span class="user-email">{{ mail_email }}</span>
@@ -60,7 +66,9 @@
                   <form method="post" action="{% url 'webmail:admin_domain_action' %}" hx-confirm="Delete {{ d.domain }} and all its mailboxes? This can't be undone.">
                     {% csrf_token %}
                     <input type="hidden" name="domain" value="{{ d.domain }}">
-                    <button name="action" value="delete" class="icon-btn danger">Delete</button>
+                    <button name="action" value="delete" class="icon-btn danger" title="Delete" aria-label="Delete">
+                      <svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>
+                    </button>
                   </form>
                 </td>
               </tr>

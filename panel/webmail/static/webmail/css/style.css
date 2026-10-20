@@ -64,6 +64,60 @@ button { font: inherit; }
 }
 
 .muted { color: var(--text-muted); }
+
+/* ---------- icons ---------- */
+.icon-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+.icon {
+  width: 1.15em;
+  height: 1.15em;
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: -0.15em;
+}
+.icon-sm { width: 1em; height: 1em; }
+.icon-empty {
+  width: 2.75rem;
+  height: 2.75rem;
+  color: var(--text-muted);
+  opacity: 0.55;
+  margin: 0 auto 0.85rem;
+  display: block;
+}
+.icon-btn .icon { width: 1.2rem; height: 1.2rem; }
+.icon-starred { color: #e6a23c; }
+.icon-starred:hover { color: #d4922a; }
+.btn .icon { width: 1.05rem; height: 1.05rem; }
+.btn-label { display: inline-flex; align-items: center; gap: 0.4rem; }
+.list-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+}
+.list-heading .icon { width: 1.25rem; height: 1.25rem; color: var(--text-muted); }
+.topbar-user > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.attachments > strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.compose-form label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -234,11 +288,12 @@ label { font-weight: 600; font-size: 0.9rem; }
   cursor: pointer;
   min-width: var(--touch);
   min-height: var(--touch);
-  font-size: 1.25rem;
   border-radius: 10px;
   color: var(--text);
 }
+.hamburger .icon { width: 1.35rem; height: 1.35rem; }
 .hamburger:hover { background: var(--surface-2); }
+.account-menu-btn .icon { width: 1.25rem; height: 1.25rem; }
 .brand {
   display: inline-flex;
   align-items: center;
@@ -306,7 +361,9 @@ label { font-weight: 600; font-size: 0.9rem; }
 }
 .account-menu a,
 .account-menu .account-email {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
   padding: 0.7rem 0.85rem;
   border-radius: 8px;
   color: var(--text);
@@ -353,12 +410,19 @@ label { font-weight: 600; font-size: 0.9rem; }
 .folder-list li a {
   display: flex;
   align-items: center;
+  gap: 0.65rem;
   min-height: var(--touch);
   padding: 0.55rem 0.85rem;
   margin: 0.1rem 0;
   border-radius: 10px;
   color: var(--text);
 }
+.folder-list li a .icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  color: var(--text-muted);
+}
+.folder-list li.active a .icon { color: var(--accent); }
 .folder-list li.active a {
   background: var(--accent-soft);
   color: var(--accent);
@@ -386,7 +450,6 @@ label { font-weight: 600; font-size: 0.9rem; }
   z-index: 5;
   border-bottom: 1px solid var(--border);
 }
-.list-toolbar h2 { margin: 0; font-size: 1.15rem; letter-spacing: -0.02em; }
 .list-toolbar-right { display: flex; align-items: center; gap: 0.35rem; }
 .refresh-btn { display: inline-flex; align-items: center; justify-content: center; }
 .refresh-btn:hover { text-decoration: none; }
@@ -545,6 +608,7 @@ label { font-weight: 600; font-size: 0.9rem; }
 .back-link {
   display: inline-flex;
   align-items: center;
+  gap: 0.15rem;
   min-height: 36px;
   margin-bottom: 0.25rem;
   font-weight: 600;
@@ -733,7 +797,13 @@ label { font-weight: 600; font-size: 0.9rem; }
   .list-pane, .detail-pane { display: block !important; min-height: 0; }
   .user-email { display: inline; }
   .msg-actions { display: flex; }
-  .topbar-user > a { display: inline-flex; padding: 0.45rem 0.55rem; border-radius: 8px; }
+  .topbar-user > a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.45rem 0.55rem;
+    border-radius: 8px;
+  }
   .topbar-user > a:hover { background: var(--surface-2); text-decoration: none; }
   .account-menu { display: none !important; }
 

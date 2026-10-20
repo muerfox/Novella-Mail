@@ -5,28 +5,59 @@
 <label for="nav-toggle" class="nav-overlay" aria-hidden="true"></label>
 <div class="app-shell {% if detail %}has-detail{% endif %}">
   <header class="topbar">
-    <label for="nav-toggle" class="hamburger" aria-label="Open folders" title="Folders">☰</label>
+    <label for="nav-toggle" class="hamburger" aria-label="Open folders" title="Folders">
+      <svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg>
+    </label>
     {% include "webmail/_brand.html" %}
-    <a href="{% url 'webmail:compose' %}" class="btn btn-primary btn-compose">Compose</a>
+    <a href="{% url 'webmail:compose' %}" class="btn btn-primary btn-compose">
+      <svg class="icon" aria-hidden="true"><use href="#i-compose"/></svg>
+      <span>Compose</span>
+    </a>
     <div class="topbar-user">
       {% if is_admin %}
-        <a href="{% url 'webmail:admin_clients' %}">Clients</a>
-        <a href="{% url 'webmail:admin_domains' %}">Domains</a>
+        <a href="{% url 'webmail:admin_clients' %}">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-users"/></svg>
+          <span>Clients</span>
+        </a>
+        <a href="{% url 'webmail:admin_domains' %}">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-globe"/></svg>
+          <span>Domains</span>
+        </a>
       {% endif %}
       <span class="user-email" title="{{ mail_email }}">{{ mail_email }}</span>
-      <a href="{% url 'webmail:change_password' %}">Password</a>
-      <a href="{% url 'webmail:logout' %}" hx-boost="false">Sign out</a>
+      <a href="{% url 'webmail:change_password' %}">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-lock"/></svg>
+        <span>Password</span>
+      </a>
+      <a href="{% url 'webmail:logout' %}" hx-boost="false">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-logout"/></svg>
+        <span>Sign out</span>
+      </a>
 
       <input type="checkbox" id="account-toggle" class="account-toggle-checkbox">
-      <label for="account-toggle" class="account-menu-btn" aria-label="Account menu" title="Account">⋮</label>
+      <label for="account-toggle" class="account-menu-btn" aria-label="Account menu" title="Account">
+        <svg class="icon" aria-hidden="true"><use href="#i-more"/></svg>
+      </label>
       <div class="account-menu" role="menu">
         <div class="account-email">{{ mail_email }}</div>
         {% if is_admin %}
-          <a href="{% url 'webmail:admin_clients' %}" role="menuitem">Clients</a>
-          <a href="{% url 'webmail:admin_domains' %}" role="menuitem">Domains</a>
+          <a href="{% url 'webmail:admin_clients' %}" role="menuitem">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#i-users"/></svg>
+            Clients
+          </a>
+          <a href="{% url 'webmail:admin_domains' %}" role="menuitem">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#i-globe"/></svg>
+            Domains
+          </a>
         {% endif %}
-        <a href="{% url 'webmail:change_password' %}" role="menuitem">Change password</a>
-        <a href="{% url 'webmail:logout' %}" class="menu-danger" hx-boost="false" role="menuitem">Sign out</a>
+        <a href="{% url 'webmail:change_password' %}" role="menuitem">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-lock"/></svg>
+          Change password
+        </a>
+        <a href="{% url 'webmail:logout' %}" class="menu-danger" hx-boost="false" role="menuitem">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-logout"/></svg>
+          Sign out
+        </a>
       </div>
     </div>
   </header>
@@ -40,7 +71,9 @@
   <nav class="folder-pane" aria-label="Mail folders">
     <div class="folder-pane-head">
       <strong>{{ mail_email }}</strong>
-      <label for="nav-toggle" class="icon-btn" aria-label="Close folders" title="Close">✕</label>
+      <label for="nav-toggle" class="icon-btn" aria-label="Close folders" title="Close">
+        <svg class="icon" aria-hidden="true"><use href="#i-close"/></svg>
+      </label>
     </div>
     {% include "webmail/_folder_nav.html" %}
   </nav>
@@ -54,6 +87,7 @@
       {% include "webmail/_message_detail.html" %}
     {% else %}
       <div class="empty-state-card">
+        <svg class="icon icon-empty" aria-hidden="true"><use href="#i-mail-empty"/></svg>
         <h3>No message selected</h3>
         <p>Choose one from the list to read it here.</p>
       </div>

@@ -2,12 +2,25 @@
   {% for f in folders %}
     <li class="{% if f.name == current_folder %}active{% endif %}">
       <a class="folder-link" href="{% url 'webmail:mail' %}?folder={{ f.name|urlencode }}">
-        {% if f.name == "INBOX" %}Inbox
-        {% elif f.name == "Sent" or f.name == "Sent Messages" %}Sent
-        {% elif f.name == "Drafts" %}Drafts
-        {% elif f.name == "Trash" or f.name == "Deleted Messages" %}Trash
-        {% elif f.name == "Junk" or f.name == "Spam" %}Junk
-        {% else %}{{ f.name }}{% endif %}
+        {% if f.name == "INBOX" %}
+          <svg class="icon" aria-hidden="true"><use href="#i-inbox"/></svg>
+          <span>Inbox</span>
+        {% elif f.name == "Sent" or f.name == "Sent Messages" %}
+          <svg class="icon" aria-hidden="true"><use href="#i-sent"/></svg>
+          <span>Sent</span>
+        {% elif f.name == "Drafts" %}
+          <svg class="icon" aria-hidden="true"><use href="#i-drafts"/></svg>
+          <span>Drafts</span>
+        {% elif f.name == "Trash" or f.name == "Deleted Messages" %}
+          <svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>
+          <span>Trash</span>
+        {% elif f.name == "Junk" or f.name == "Spam" %}
+          <svg class="icon" aria-hidden="true"><use href="#i-junk"/></svg>
+          <span>Junk</span>
+        {% else %}
+          <svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>
+          <span>{{ f.name }}</span>
+        {% endif %}
       </a>
     </li>
   {% empty %}

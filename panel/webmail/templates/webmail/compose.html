@@ -3,8 +3,14 @@
 {% block body %}
 <div class="app-shell compose-shell">
   <header class="topbar">
-    <a href="{% url 'webmail:mail' %}" class="back-link">‹ Mail</a>
-    <div class="brand"><span class="brand-name">New message</span></div>
+    <a href="{% url 'webmail:mail' %}" class="back-link">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-back"/></svg>
+      Mail
+    </a>
+    <div class="brand">
+      <svg class="icon" aria-hidden="true"><use href="#i-compose"/></svg>
+      <span class="brand-name">New message</span>
+    </div>
   </header>
 
   {% if messages %}
@@ -33,13 +39,16 @@
       <label for="{{ form.body.id_for_label }}">Message</label>
       {{ form.body }}
 
-      <label for="attachments">Attachments</label>
+      <label for="attachments">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-paperclip"/></svg>
+        Attachments
+      </label>
       <input type="file" name="attachments" id="attachments" multiple>
 
       <div class="compose-actions">
         <button type="submit" class="btn btn-primary btn-send">
           <span class="spinner" aria-hidden="true"></span>
-          <span class="btn-label">Send</span>
+          <span class="btn-label"><svg class="icon" aria-hidden="true"><use href="#i-sent"/></svg> Send</span>
           <span class="btn-label-busy">Sending…</span>
         </button>
         <a href="{% url 'webmail:mail' %}" class="btn">Cancel</a>

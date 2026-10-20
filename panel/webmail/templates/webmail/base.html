@@ -12,6 +12,7 @@
   <script src="{% static 'webmail/js/app.js' %}" defer></script>
 </head>
 <body hx-boost="true" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+  {% include "webmail/_icons.html" %}
   {% block body %}{% endblock %}
 </body>
 </html>

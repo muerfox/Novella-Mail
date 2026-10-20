@@ -1,27 +1,45 @@
 <div class="detail-header">
-  <a class="back-link" href="{% url 'webmail:mail' %}?folder={{ current_folder|urlencode }}&page={{ page }}">‹ Messages</a>
+  <a class="back-link" href="{% url 'webmail:mail' %}?folder={{ current_folder|urlencode }}&page={{ page }}">
+    <svg class="icon icon-sm" aria-hidden="true"><use href="#i-back"/></svg>
+    Messages
+  </a>
   <h2>{{ detail.subject|default:"(no subject)" }}</h2>
   <p class="detail-meta"><strong>From</strong> {{ detail.from|default:"Unknown sender" }}</p>
   <p class="detail-meta"><strong>To</strong> {{ detail.to }}</p>
   {% if detail.cc %}<p class="detail-meta"><strong>Cc</strong> {{ detail.cc }}</p>{% endif %}
   <p class="detail-meta"><strong>Date</strong> {{ detail.date }}</p>
   <div class="detail-toolbar">
-    <a class="btn btn-primary" href="{% url 'webmail:compose' %}?reply={{ detail.uid }}&folder={{ current_folder|urlencode }}&mode=reply">Reply</a>
-    <a class="btn" href="{% url 'webmail:compose' %}?reply={{ detail.uid }}&folder={{ current_folder|urlencode }}&mode=reply-all">Reply all</a>
-    <a class="btn" href="{% url 'webmail:compose' %}?reply={{ detail.uid }}&folder={{ current_folder|urlencode }}&mode=forward">Forward</a>
+    <a class="btn btn-primary" href="{% url 'webmail:compose' %}?reply={{ detail.uid }}&folder={{ current_folder|urlencode }}&mode=reply">
+      <svg class="icon" aria-hidden="true"><use href="#i-reply"/></svg>
+      Reply
+    </a>
+    <a class="btn" href="{% url 'webmail:compose' %}?reply={{ detail.uid }}&folder={{ current_folder|urlencode }}&mode=reply-all">
+      <svg class="icon" aria-hidden="true"><use href="#i-reply-all"/></svg>
+      Reply all
+    </a>
+    <a class="btn" href="{% url 'webmail:compose' %}?reply={{ detail.uid }}&folder={{ current_folder|urlencode }}&mode=forward">
+      <svg class="icon" aria-hidden="true"><use href="#i-forward"/></svg>
+      Forward
+    </a>
     <form method="post" action="{% url 'webmail:message_action' %}">
       {% csrf_token %}
       <input type="hidden" name="folder" value="{{ current_folder }}">
       <input type="hidden" name="uid" value="{{ detail.uid }}">
       <input type="hidden" name="page" value="{{ page }}">
-      <button name="action" value="delete" class="btn btn-danger">Delete</button>
+      <button name="action" value="delete" class="btn btn-danger">
+        <svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>
+        Delete
+      </button>
     </form>
   </div>
 </div>
 
 {% if detail.attachments %}
 <div class="attachments">
-  <strong>Attachments</strong>
+  <strong>
+    <svg class="icon icon-sm" aria-hidden="true"><use href="#i-paperclip"/></svg>
+    Attachments
+  </strong>
   <ul>
     {% for a in detail.attachments %}
       <li>

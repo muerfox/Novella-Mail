@@ -3,8 +3,14 @@
 {% block body %}
 <div class="app-shell compose-shell">
   <header class="topbar">
-    <a href="{% url 'webmail:mail' %}" class="back-link">‹ Mail</a>
-    <div class="brand"><span class="brand-name">Clients</span></div>
+    <a href="{% url 'webmail:mail' %}" class="back-link">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#i-back"/></svg>
+      Mail
+    </a>
+    <div class="brand">
+      <svg class="icon" aria-hidden="true"><use href="#i-users"/></svg>
+      <span class="brand-name">Clients</span>
+    </div>
     <div class="topbar-user">
       <a href="{% url 'webmail:admin_domains' %}">Domains</a>
       <span class="user-email">{{ mail_email }}</span>
