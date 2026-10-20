@@ -45,3 +45,37 @@ document.addEventListener(
   },
   true
 );
+
+function closeTransientUi() {
+  var nav = document.getElementById("nav-toggle");
+  var account = document.getElementById("account-toggle");
+  if (nav) nav.checked = false;
+  if (account) account.checked = false;
+}
+
+// Close the folder drawer when a folder is chosen (hx-boost keeps the page
+// state otherwise, so the drawer would stay open over the inbox).
+document.addEventListener("click", function (event) {
+  var folderLink = event.target.closest && event.target.closest(".folder-link");
+  if (folderLink) {
+    var nav = document.getElementById("nav-toggle");
+    if (nav) nav.checked = false;
+    return;
+  }
+  // Tap outside the account menu closes it.
+  var account = document.getElementById("account-toggle");
+  if (
+    account &&
+    account.checked &&
+    !event.target.closest(".topbar-user")
+  ) {
+    account.checked = false;
+  }
+});
+
+document.addEventListener("keydown", function (event) {
+  if (event.key === "Escape") closeTransientUi();
+});
+
+// After htmx swaps in a new page body, make sure drawers aren't left open.
+document.addEventListener("htmx:afterSettle", closeTransientUi);

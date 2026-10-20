@@ -3,8 +3,8 @@
 {% block body %}
 <div class="app-shell compose-shell">
   <header class="topbar">
-    <a href="{% url 'webmail:mail' %}" class="back-link">‹ Back to mail</a>
-    <div class="brand">Domains</div>
+    <a href="{% url 'webmail:mail' %}" class="back-link">‹ Mail</a>
+    <div class="brand"><span class="brand-name">Domains</span></div>
     <div class="topbar-user">
       <a href="{% url 'webmail:admin_clients' %}">Clients</a>
       <span class="user-email">{{ mail_email }}</span>
@@ -65,7 +65,7 @@
                 </td>
               </tr>
             {% empty %}
-              <tr><td colspan="5" class="muted">No domains yet.</td></tr>
+              <tr><td colspan="5" class="muted">No domains yet — add one above.</td></tr>
             {% endfor %}
           </tbody>
         </table>

@@ -9,6 +9,7 @@
       <img src="{% static 'webmail/img/logo-icon.png' %}" width="72" height="72" alt="">
       <h1>Novella Mail</h1>
     </div>
+    <p class="auth-sub">Use your full email address and password.</p>
     {% if error %}<p class="alert alert-error">{{ error }}</p>{% endif %}
     {% for field in form %}
       <label for="{{ field.id_for_label }}">{{ field.label }}</label>

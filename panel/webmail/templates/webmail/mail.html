@@ -5,17 +5,29 @@
 <label for="nav-toggle" class="nav-overlay" aria-hidden="true"></label>
 <div class="app-shell {% if detail %}has-detail{% endif %}">
   <header class="topbar">
-    <label for="nav-toggle" class="hamburger" aria-label="Toggle folders">☰</label>
+    <label for="nav-toggle" class="hamburger" aria-label="Open folders" title="Folders">☰</label>
     {% include "webmail/_brand.html" %}
-    <a href="{% url 'webmail:compose' %}" class="btn btn-primary btn-compose">✎ Compose</a>
+    <a href="{% url 'webmail:compose' %}" class="btn btn-primary btn-compose">Compose</a>
     <div class="topbar-user">
       {% if is_admin %}
         <a href="{% url 'webmail:admin_clients' %}">Clients</a>
         <a href="{% url 'webmail:admin_domains' %}">Domains</a>
       {% endif %}
-      <span class="user-email">{{ mail_email }}</span>
+      <span class="user-email" title="{{ mail_email }}">{{ mail_email }}</span>
       <a href="{% url 'webmail:change_password' %}">Password</a>
       <a href="{% url 'webmail:logout' %}" hx-boost="false">Sign out</a>
+
+      <input type="checkbox" id="account-toggle" class="account-toggle-checkbox">
+      <label for="account-toggle" class="account-menu-btn" aria-label="Account menu" title="Account">⋮</label>
+      <div class="account-menu" role="menu">
+        <div class="account-email">{{ mail_email }}</div>
+        {% if is_admin %}
+          <a href="{% url 'webmail:admin_clients' %}" role="menuitem">Clients</a>
+          <a href="{% url 'webmail:admin_domains' %}" role="menuitem">Domains</a>
+        {% endif %}
+        <a href="{% url 'webmail:change_password' %}" role="menuitem">Change password</a>
+        <a href="{% url 'webmail:logout' %}" class="menu-danger" hx-boost="false" role="menuitem">Sign out</a>
+      </div>
     </div>
   </header>
 
@@ -25,19 +37,26 @@
     </div>
   {% endif %}
 
-  <nav class="folder-pane">
+  <nav class="folder-pane" aria-label="Mail folders">
+    <div class="folder-pane-head">
+      <strong>{{ mail_email }}</strong>
+      <label for="nav-toggle" class="icon-btn" aria-label="Close folders" title="Close">✕</label>
+    </div>
     {% include "webmail/_folder_nav.html" %}
   </nav>
 
-  <section class="list-pane">
+  <section class="list-pane" aria-label="Messages">
     {% include "webmail/_message_list.html" %}
   </section>
 
-  <section class="detail-pane">
+  <section class="detail-pane" aria-label="Message">
     {% if detail %}
       {% include "webmail/_message_detail.html" %}
     {% else %}
-      <div class="empty-state">Select a message to read it.</div>
+      <div class="empty-state-card">
+        <h3>No message selected</h3>
+        <p>Choose one from the list to read it here.</p>
+      </div>
     {% endif %}
   </section>
 </div>

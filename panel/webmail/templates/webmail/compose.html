@@ -3,8 +3,8 @@
 {% block body %}
 <div class="app-shell compose-shell">
   <header class="topbar">
-    <a href="{% url 'webmail:mail' %}" class="back-link">‹ Back to mail</a>
-    <div class="brand">New message</div>
+    <a href="{% url 'webmail:mail' %}" class="back-link">‹ Mail</a>
+    <div class="brand"><span class="brand-name">New message</span></div>
   </header>
 
   {% if messages %}

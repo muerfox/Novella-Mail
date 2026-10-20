@@ -1,8 +1,15 @@
 <div class="list-toolbar">
-  <h2>{{ current_folder }}</h2>
+  <h2>
+    {% if current_folder == "INBOX" %}Inbox
+    {% elif current_folder == "Sent" or current_folder == "Sent Messages" %}Sent
+    {% elif current_folder == "Drafts" %}Drafts
+    {% elif current_folder == "Trash" or current_folder == "Deleted Messages" %}Trash
+    {% elif current_folder == "Junk" or current_folder == "Spam" %}Junk
+    {% else %}{{ current_folder }}{% endif %}
+  </h2>
   <div class="list-toolbar-right">
     <span class="muted">{{ total }} message{{ total|pluralize }}</span>
-    <a class="icon-btn refresh-btn" title="Refresh" aria-label="Refresh"
+    <a class="icon-btn refresh-btn" title="Refresh" aria-label="Refresh messages"
        href="{% url 'webmail:mail' %}?folder={{ current_folder|urlencode }}&page={{ page }}{% if selected_uid %}&uid={{ selected_uid }}{% endif %}">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
     </a>
@@ -12,9 +19,10 @@
   {% for m in messages_list %}
     <li class="msg-row {% if not m.seen %}unread{% endif %} {% if m.uid == selected_uid %}selected{% endif %}">
       <a class="msg-link" href="{% url 'webmail:mail' %}?folder={{ current_folder|urlencode }}&uid={{ m.uid }}&page={{ page }}">
-        <span class="msg-from">{{ m.from|default:"(unknown sender)" }}</span>
-        <span class="msg-subject">{{ m.subject }}</span>
-        <span class="msg-date">{% if m.date %}{{ m.date|date:"M j, Y H:i" }}{% endif %}</span>
+        <span class="msg-unread-dot" aria-hidden="true"></span>
+        <span class="msg-from">{{ m.from|default:"Unknown sender" }}</span>
+        <span class="msg-subject">{{ m.subject|default:"(no subject)" }}</span>
+        <span class="msg-date">{% if m.date %}{{ m.date|date:"M j" }}{% endif %}</span>
       </a>
       <form method="post" action="{% url 'webmail:message_action' %}" class="msg-actions">
         {% csrf_token %}
@@ -22,26 +30,38 @@
         <input type="hidden" name="uid" value="{{ m.uid }}">
         <input type="hidden" name="page" value="{{ page }}">
         {% if m.seen %}
-          <button name="action" value="mark_unread" class="icon-btn" title="Mark unread">●</button>
+          <button name="action" value="mark_unread" class="icon-btn" title="Mark unread" aria-label="Mark unread">●</button>
         {% else %}
-          <button name="action" value="mark_read" class="icon-btn" title="Mark read">○</button>
+          <button name="action" value="mark_read" class="icon-btn" title="Mark read" aria-label="Mark read">○</button>
         {% endif %}
         {% if m.flagged %}
-          <button name="action" value="unflag" class="icon-btn" title="Unstar">★</button>
+          <button name="action" value="unflag" class="icon-btn" title="Remove star" aria-label="Remove star">★</button>
         {% else %}
-          <button name="action" value="flag" class="icon-btn" title="Star">☆</button>
+          <button name="action" value="flag" class="icon-btn" title="Star" aria-label="Star">☆</button>
         {% endif %}
-        <button name="action" value="delete" class="icon-btn danger" title="Delete">🗑</button>
+        <button name="action" value="delete" class="icon-btn danger" title="Delete" aria-label="Delete">🗑</button>
       </form>
     </li>
   {% empty %}
-    <li class="muted empty-row">No messages.</li>
+    <li class="empty-state-card">
+      <h3>Nothing here yet</h3>
+      <p>
+        {% if current_folder == "INBOX" %}
+          When mail arrives, it’ll show up in your inbox.
+        {% else %}
+          This folder is empty.
+        {% endif %}
+      </p>
+      {% if current_folder == "INBOX" %}
+        <a class="btn btn-primary" href="{% url 'webmail:compose' %}">Write a message</a>
+      {% endif %}
+    </li>
   {% endfor %}
 </ul>
 {% if total_pages > 1 %}
-<nav class="pagination">
+<nav class="pagination" aria-label="Message pages">
   {% if page > 1 %}
-    <a href="{% url 'webmail:mail' %}?folder={{ current_folder|urlencode }}&page={{ page|add:"-1" }}">‹ Prev</a>
+    <a href="{% url 'webmail:mail' %}?folder={{ current_folder|urlencode }}&page={{ page|add:"-1" }}">‹ Previous</a>
   {% endif %}
   <span>Page {{ page }} of {{ total_pages }}</span>
   {% if page < total_pages %}

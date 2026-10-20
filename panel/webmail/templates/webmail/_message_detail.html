@@ -1,12 +1,12 @@
 <div class="detail-header">
-  <a class="back-link" href="{% url 'webmail:mail' %}?folder={{ current_folder|urlencode }}&page={{ page }}">‹ Back</a>
-  <h2>{{ detail.subject }}</h2>
-  <p class="detail-meta"><strong>From:</strong> {{ detail.from }}</p>
-  <p class="detail-meta"><strong>To:</strong> {{ detail.to }}</p>
-  {% if detail.cc %}<p class="detail-meta"><strong>Cc:</strong> {{ detail.cc }}</p>{% endif %}
-  <p class="detail-meta"><strong>Date:</strong> {{ detail.date }}</p>
+  <a class="back-link" href="{% url 'webmail:mail' %}?folder={{ current_folder|urlencode }}&page={{ page }}">‹ Messages</a>
+  <h2>{{ detail.subject|default:"(no subject)" }}</h2>
+  <p class="detail-meta"><strong>From</strong> {{ detail.from|default:"Unknown sender" }}</p>
+  <p class="detail-meta"><strong>To</strong> {{ detail.to }}</p>
+  {% if detail.cc %}<p class="detail-meta"><strong>Cc</strong> {{ detail.cc }}</p>{% endif %}
+  <p class="detail-meta"><strong>Date</strong> {{ detail.date }}</p>
   <div class="detail-toolbar">
-    <a class="btn" href="{% url 'webmail:compose' %}?reply={{ detail.uid }}&folder={{ current_folder|urlencode }}&mode=reply">Reply</a>
+    <a class="btn btn-primary" href="{% url 'webmail:compose' %}?reply={{ detail.uid }}&folder={{ current_folder|urlencode }}&mode=reply">Reply</a>
     <a class="btn" href="{% url 'webmail:compose' %}?reply={{ detail.uid }}&folder={{ current_folder|urlencode }}&mode=reply-all">Reply all</a>
     <a class="btn" href="{% url 'webmail:compose' %}?reply={{ detail.uid }}&folder={{ current_folder|urlencode }}&mode=forward">Forward</a>
     <form method="post" action="{% url 'webmail:message_action' %}">

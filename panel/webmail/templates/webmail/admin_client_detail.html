@@ -4,7 +4,7 @@
 <div class="app-shell compose-shell">
   <header class="topbar">
     <a href="{% url 'webmail:admin_clients' %}" class="back-link">‹ Clients</a>
-    <div class="brand">{{ client.name }}</div>
+    <div class="brand"><span class="brand-name">{{ client.name }}</span></div>
     <div class="topbar-user">
       <a href="{% url 'webmail:admin_domains' %}">Domains</a>
       <span class="user-email">{{ mail_email }}</span>

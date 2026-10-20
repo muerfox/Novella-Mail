@@ -1,15 +1,25 @@
 <ul class="folder-list">
   {% for f in folders %}
     <li class="{% if f.name == current_folder %}active{% endif %}">
-      <a href="{% url 'webmail:mail' %}?folder={{ f.name|urlencode }}">{{ f.name }}</a>
+      <a class="folder-link" href="{% url 'webmail:mail' %}?folder={{ f.name|urlencode }}">
+        {% if f.name == "INBOX" %}Inbox
+        {% elif f.name == "Sent" or f.name == "Sent Messages" %}Sent
+        {% elif f.name == "Drafts" %}Drafts
+        {% elif f.name == "Trash" or f.name == "Deleted Messages" %}Trash
+        {% elif f.name == "Junk" or f.name == "Spam" %}Junk
+        {% else %}{{ f.name }}{% endif %}
+      </a>
     </li>
   {% empty %}
-    <li class="muted">No folders found.</li>
+    <li class="muted" style="padding: 0.85rem;">No folders yet.</li>
   {% endfor %}
 </ul>
 {% if quota %}
   <div class="quota-box">
     <div class="usage-bar{% if quota.percent >= 90 %} usage-high{% endif %}"><span style="width: {{ quota.percent }}%"></span></div>
-    <p class="muted">{{ quota.used|filesizeformat }} of {{ quota.limit|filesizeformat }} used</p>
+    <p class="muted">
+      {% if quota.percent >= 90 %}Almost full — {% endif %}
+      {{ quota.used|filesizeformat }} of {{ quota.limit|filesizeformat }} used
+    </p>
   </div>
 {% endif %}
