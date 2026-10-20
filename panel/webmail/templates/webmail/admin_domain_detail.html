@@ -47,12 +47,19 @@
 
     <section class="admin-card">
       <h2>DNS checklist</h2>
-      <p class="muted">Add these at your DNS provider for <strong>{{ domain }}</strong> so mail actually routes here.</p>
+      <p class="muted">
+        Add these at the DNS provider for <strong>{{ domain }}</strong> so mail for this domain routes here.
+        {% if not mail_domain_in_this_zone %}
+          The mail server hostname is <code>{{ mail_domain }}</code> (a different zone) — its A/PTR records are not added here.
+        {% endif %}
+      </p>
       <div class="table-scroll">
         <table class="admin-table dns-table">
           <thead><tr><th>Type</th><th>Name</th><th>Value</th></tr></thead>
           <tbody>
-            <tr><td>A</td><td>{{ mail_domain }}</td><td>your server's public IP</td></tr>
+            {% if mail_domain_in_this_zone %}
+              <tr><td>A</td><td>{{ mail_domain }}</td><td>your server's public IP</td></tr>
+            {% endif %}
             <tr><td>MX</td><td>{{ domain }}</td><td>{{ mail_domain }} (priority 10)</td></tr>
             <tr><td>TXT</td><td>{{ domain }}</td><td class="dns-value">v=spf1 mx -all</td></tr>
             <tr><td>TXT</td><td>_dmarc.{{ domain }}</td><td class="dns-value">v=DMARC1; p=quarantine; rua=mailto:postmaster@{{ domain }}</td></tr>
@@ -66,7 +73,14 @@
           </tbody>
         </table>
       </div>
-      <p class="muted">PTR (reverse DNS) is set with your hosting provider, not in this zone — point it at {{ mail_domain }}.</p>
+      {% if mail_domain_in_this_zone %}
+        <p class="muted">PTR (reverse DNS) is set with your hosting provider, not in this zone — point it at {{ mail_domain }}.</p>
+      {% else %}
+        <p class="muted">
+          Server (set once, not in this zone): A record for <code>{{ mail_domain }}</code> → your public IP,
+          and PTR at the VPS provider → <code>{{ mail_domain }}</code>.
+        </p>
+      {% endif %}
     </section>
 
     <section class="admin-card">

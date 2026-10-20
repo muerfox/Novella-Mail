@@ -479,13 +479,21 @@ def domain_detail(request, domain):
         return redirect("webmail:admin_domain_detail", domain=domain)
 
     owner = mailadmin.client_for_domain(domain)
+    mail_domain = (settings.MAIL_DOMAIN or "").strip().lower()
+    # A/PTR for the mail hostname belong in that hostname's own DNS zone
+    # (e.g. mail.kavix-team.com → kavix-team.com), not in every client
+    # domain's checklist (shopreum.com only needs MX/SPF/DMARC/DKIM).
+    mail_domain_in_this_zone = bool(mail_domain) and (
+        mail_domain == domain or mail_domain.endswith("." + domain)
+    )
     context = {
         "domain": domain,
         "info": mailadmin.get_domain(domain),
         "mailboxes": mailadmin.list_mailboxes(domain),
         "dkim": mailadmin.get_dkim(domain),
         "mailbox_form": mailbox_form,
-        "mail_domain": settings.MAIL_DOMAIN,
+        "mail_domain": mail_domain,
+        "mail_domain_in_this_zone": mail_domain_in_this_zone,
         "owner": owner,
         "clients": [] if owner else mailadmin.list_clients(with_usage=False),
     }
